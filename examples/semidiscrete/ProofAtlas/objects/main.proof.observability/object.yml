@@ -1,0 +1,19 @@
+uid: obj_20260611_c28d
+name: main.proof.observability
+kind: math
+role: proof
+display_as: proof
+importance: supporting
+title: Proof of the observability inequality
+status: needs_check
+body:
+  - proof.md
+summary: Expand the adjoint in eigenfunctions, apply the discrete spectral inequality, and use Ito's formula with an exponential weight.
+edges:
+  proves:
+    - main.claim.observability
+  uses:
+    - main.claim.partial_discrete_lr
+    - main.model.backward_adjoint_system
+    - main.setting.spectral_spaces
+    - main.eq.observability_spectral_bound

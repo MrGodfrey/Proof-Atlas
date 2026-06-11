@@ -1,0 +1,18 @@
+uid: obj_20260611_a104
+name: main.model.backward_adjoint_system
+kind: math
+role: model
+display_as: equation
+importance: background
+title: Backward semi-discrete stochastic adjoint system
+status: checked
+body:
+  - body.md
+summary: The finite-dimensional backward stochastic equation used in the observability and duality arguments.
+edges:
+  uses:
+    - main.setting.probability_and_spaces
+    - main.setting.spectral_spaces
+    - main.setting.grid_operator
+  cites:
+    - source.lue_zhang_2021

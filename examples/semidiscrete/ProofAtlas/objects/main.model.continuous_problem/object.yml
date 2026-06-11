@@ -1,0 +1,17 @@
+uid: obj_20260611_f004
+name: main.model.continuous_problem
+kind: math
+role: model
+display_as: equation
+importance: background
+title: Continuous stochastic parabolic control problem
+status: checked
+body:
+  - body.md
+summary: The continuous stochastic parabolic equation and its classical null controllability problem.
+edges:
+  uses:
+    - main.setting.probability_and_spaces
+    - main.setting.domain_and_coefficients
+  cites:
+    - source.lue_2011

@@ -1,0 +1,58 @@
+{
+  "name": "proof-atlas",
+  "version": "0.1.0",
+  "description": "A local, file-driven workbench for mathematical proof graphs.",
+  "license": "MIT",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/MrGodfrey/Proof-Atlas.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MrGodfrey/Proof-Atlas/issues"
+  },
+  "homepage": "https://github.com/MrGodfrey/Proof-Atlas#readme",
+  "keywords": [
+    "proof",
+    "mathematics",
+    "markdown",
+    "research",
+    "knowledge-graph",
+    "local-first"
+  ],
+  "type": "module",
+  "scripts": {
+    "atlas": "tsx src/cli/atlas.ts",
+    "build": "tsc -p tsconfig.json && vite build",
+    "dev": "vite --host 127.0.0.1",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/source-serif-4": "^5.2.9",
+    "@fontsource/spline-sans-mono": "^5.2.8",
+    "@vitejs/plugin-react": "^5.0.0",
+    "chokidar": "^4.0.3",
+    "commander": "^14.0.0",
+    "js-yaml": "^4.1.0",
+    "katex": "^0.17.0",
+    "lucide-react": "^0.468.0",
+    "markdown-it": "^14.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "vite": "^7.0.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.1",
+    "@types/react-dom": "^19.0.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.8"
+  }
+}

@@ -1,0 +1,20 @@
+uid: obj_20260611_a7f3
+name: main.claim.null_controllability
+kind: math
+role: claim
+display_as: theorem
+importance: main
+title: "Main theorem: phi-null controllability with drift control"
+status: needs_check
+body:
+  - statement.md
+summary: Main theorem asserting low-mode null control, a uniform drift-control bound, and exponentially small final residual.
+edges:
+  uses:
+    - main.problem.control_question
+    - main.setting.spectral_spaces
+    - main.model.forward_semidiscrete_system
+    - main.claim.partial_null_control
+    - main.claim.free_decay
+  cites:
+    - source.lue_2011

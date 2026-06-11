@@ -1,0 +1,15 @@
+uid: obj_20260611_f001
+name: paper.note.frontmatter
+kind: note
+role: external_context
+display_as: note
+importance: background
+title: Paper overview, abstract, and keywords
+status: checked
+body:
+  - note.md
+summary: Title, abstract, and keywords of the paper.
+edges:
+  related_to:
+    - main.problem.control_question
+    - main.claim.null_controllability

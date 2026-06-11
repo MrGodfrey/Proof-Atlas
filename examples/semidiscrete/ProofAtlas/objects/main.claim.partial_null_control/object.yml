@@ -1,0 +1,16 @@
+uid: obj_20260611_d101
+name: main.claim.partial_null_control
+kind: math
+role: claim
+display_as: proposition
+importance: supporting
+title: Partial null controllability on a spectral window
+status: needs_check
+body:
+  - statement.md
+summary: Uses observability to build an adapted control that kills the projection onto E_j and estimates both the control and final state.
+edges:
+  uses:
+    - main.claim.observability
+    - main.model.forward_semidiscrete_system
+    - main.setting.spectral_spaces

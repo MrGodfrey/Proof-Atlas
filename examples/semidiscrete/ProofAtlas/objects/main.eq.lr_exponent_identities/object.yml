@@ -1,0 +1,14 @@
+uid: obj_20260611_f025
+name: main.eq.lr_exponent_identities
+kind: math
+role: claim
+display_as: equation
+importance: supporting
+title: Exponent identities for the iteration product
+status: needs_check
+body:
+  - statement.md
+summary: Elementary identities that reduce the iteration product to a negative exponential bound.
+edges:
+  uses:
+    - main.construction.lr_time_grid

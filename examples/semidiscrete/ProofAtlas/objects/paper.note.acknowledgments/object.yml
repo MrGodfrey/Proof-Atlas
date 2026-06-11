@@ -1,0 +1,11 @@
+uid: obj_20260611_f010
+name: paper.note.acknowledgments
+kind: note
+role: external_context
+display_as: note
+importance: background
+title: Acknowledgments and funding
+status: checked
+body:
+  - note.md
+summary: Funding acknowledgment imported from the paper.

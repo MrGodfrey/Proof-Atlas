@@ -1,0 +1,12 @@
+uid: obj_20260611_f018
+name: source.lue_zhang_2021
+kind: note
+role: literature
+display_as: literature_note
+importance: background
+title: Lu and Zhang 2021, Mathematical Control Theory for SPDEs
+status: checked
+body:
+  - note.md
+summary: Book source for finite-dimensional SDE/BSDE well-posedness and the Riesz representation reference used in the proof.
+provenance: external

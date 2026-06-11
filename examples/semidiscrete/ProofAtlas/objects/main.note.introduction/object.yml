@@ -1,0 +1,24 @@
+uid: obj_20260611_f002
+name: main.note.introduction
+kind: note
+role: external_context
+display_as: note
+importance: background
+title: Introduction and contribution context
+status: checked
+body:
+  - note.md
+summary: The introduction's motivation, literature positioning, discrete-control difficulty, and stated contribution.
+edges:
+  related_to:
+    - main.problem.control_question
+    - main.claim.null_controllability
+  cites:
+    - source.lue_2011
+    - source.yang_2016a
+    - source.liu_2014a
+    - source.zuazua_2005
+    - source.lecaros_2025
+    - source.boyer_2010
+    - source.boyer_2010a
+    - source.zhao_2024

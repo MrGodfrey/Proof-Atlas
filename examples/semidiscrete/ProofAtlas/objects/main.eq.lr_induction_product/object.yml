@@ -1,0 +1,16 @@
+uid: obj_20260611_f024
+name: main.eq.lr_induction_product
+kind: math
+role: claim
+display_as: equation
+importance: supporting
+title: Induction product estimate for the iteration
+status: needs_check
+body:
+  - statement.md
+summary: Product estimate obtained by iterating the controlled and free subinterval bounds.
+edges:
+  uses:
+    - main.claim.partial_null_control
+    - main.claim.free_decay
+    - main.construction.lr_time_grid

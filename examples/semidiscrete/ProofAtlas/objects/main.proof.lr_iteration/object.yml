@@ -1,0 +1,24 @@
+uid: obj_20260611_d44e
+name: main.proof.lr_iteration
+kind: math
+role: proof
+display_as: proof
+importance: main
+title: Lebeau-Robbiano iteration proving the main result
+status: needs_check
+body:
+  - proof.md
+summary: Alternate low-frequency control and uncontrolled high-frequency decay over a summable time grid, then sum the controls and residual estimates.
+edges:
+  proves:
+    - main.claim.null_controllability
+  uses:
+    - main.construction.lr_time_grid
+    - main.calculation.lr_product_estimate
+    - main.eq.lr_low_mode_cancellation
+    - main.eq.lr_control_estimate
+    - main.claim.partial_null_control
+    - main.claim.free_decay
+    - main.claim.observability
+  replaces:
+    - main.proof.naive_duality

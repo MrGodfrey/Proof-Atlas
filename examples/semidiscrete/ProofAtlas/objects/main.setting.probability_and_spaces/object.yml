@@ -1,0 +1,11 @@
+uid: obj_20260611_a101
+name: main.setting.probability_and_spaces
+kind: math
+role: setting
+display_as: setting
+importance: background
+title: Probability space and stochastic function spaces
+status: checked
+body:
+  - body.md
+summary: Complete filtered probability space, Brownian motion, progressive sigma-field, and the stochastic Bochner spaces used throughout the paper.

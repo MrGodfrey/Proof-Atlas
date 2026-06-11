@@ -1,0 +1,12 @@
+uid: obj_20260611_bad1
+name: main.claim.good
+kind: math
+role: claim
+display_as: not_a_display
+status: "false"
+title: Bad claim
+body:
+  - statement.md
+edges:
+  uses:
+    - main.claim.missing

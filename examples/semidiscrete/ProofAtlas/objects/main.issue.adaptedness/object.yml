@@ -1,0 +1,19 @@
+uid: obj_20260611_e80f
+name: main.issue.adaptedness
+kind: issue
+role: gap
+display_as: gap
+importance: main
+priority: blocker
+title: Check adaptedness of the interval-by-interval constructed control
+status: resolved
+body:
+  - note.md
+summary: The original simplified example flagged adaptedness as open; in the full paper decomposition the construction uses adapted spaces and subinterval controls, so this is retained as a resolved audit item.
+edges:
+  blocks:
+    - main.proof.naive_duality
+  related_to:
+    - main.construction.partial_control_duality
+    - main.proof.lr_iteration
+    - main.proof.naive_duality

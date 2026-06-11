@@ -1,0 +1,16 @@
+uid: obj_20260611_a102
+name: main.setting.grid_operator
+kind: math
+role: setting
+display_as: definition
+importance: background
+title: Discrete operators and the weighted grid inner product
+status: checked
+body:
+  - body.md
+summary: Translation, averaging, difference operators, the weighted inner product, and the discrete elliptic operator on the mesh.
+edges:
+  uses:
+    - main.setting.domain_and_coefficients
+    - main.setting.probability_and_spaces
+    - main.setting.discrete_mesh

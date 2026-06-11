@@ -1,0 +1,40 @@
+# LaTeX build byproducts.
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.log
+*.lot
+*.nav
+*.out
+*.run.xml
+*.snm
+*.synctex.gz
+*.toc
+*.vrb
+*.xdv
+
+# Compiled documents.
+*.pdf
+
+# Generated images.
+*.bmp
+*.gif
+*.jpeg
+*.jpg
+*.png
+*.svg
+*.tif
+*.tiff
+*.webp
+
+# Local files.
+.DS_Store
+.codex/
+
+# Node / Vite outputs.
+node_modules/
+dist/

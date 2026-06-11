@@ -1,0 +1,10 @@
+uid: obj_20260611_bcde
+name: main.claim.helper
+kind: math
+role: claim
+title: Helper claim
+body:
+  - statement.md
+edges:
+  related_to:
+    - main.claim.old

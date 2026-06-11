@@ -1,0 +1,7 @@
+uid: obj_20260611_bad2
+name: main.claim.no_body
+kind: math
+role: claim
+title: Missing body
+body:
+  - missing.md

@@ -1,0 +1,15 @@
+uid: obj_20260611_d201
+name: main.claim.free_decay
+kind: math
+role: claim
+display_as: proposition
+importance: supporting
+title: Free high-frequency decay
+status: needs_check
+body:
+  - statement.md
+summary: If the low projection vanishes and the control is zero, the remaining high modes decay at rate controlled by the first active eigenvalue.
+edges:
+  uses:
+    - main.model.forward_semidiscrete_system
+    - main.setting.spectral_spaces

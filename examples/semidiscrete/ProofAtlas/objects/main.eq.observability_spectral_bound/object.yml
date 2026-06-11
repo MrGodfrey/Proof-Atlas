@@ -1,0 +1,16 @@
+uid: obj_20260611_f019
+name: main.eq.observability_spectral_bound
+kind: math
+role: claim
+display_as: equation
+importance: supporting
+title: Pointwise observed low-frequency bound
+status: needs_check
+body:
+  - statement.md
+summary: Applies the partial discrete Lebeau-Robbiano inequality to the adjoint eigenfunction expansion at each time.
+edges:
+  uses:
+    - main.claim.partial_discrete_lr
+    - main.model.backward_adjoint_system
+    - main.setting.spectral_spaces

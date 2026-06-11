@@ -1,0 +1,19 @@
+uid: obj_20260611_a103
+name: main.model.forward_semidiscrete_system
+kind: math
+role: model
+display_as: equation
+importance: background
+title: Forward controlled semi-discrete stochastic system
+status: checked
+body:
+  - body.md
+summary: The main controlled semi-discrete stochastic parabolic equation with drift control and multiplicative Brownian noise.
+edges:
+  uses:
+    - main.setting.probability_and_spaces
+    - main.setting.domain_and_coefficients
+    - main.setting.discrete_mesh
+    - main.setting.grid_operator
+  cites:
+    - source.lue_zhang_2021

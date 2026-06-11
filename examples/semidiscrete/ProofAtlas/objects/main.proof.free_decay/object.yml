@@ -1,0 +1,17 @@
+uid: obj_20260611_d202
+name: main.proof.free_decay
+kind: math
+role: proof
+display_as: proof
+importance: supporting
+title: Proof of free high-frequency decay
+status: needs_check
+body:
+  - proof.md
+summary: Expand the uncontrolled solution in high eigenmodes and apply Ito's formula to a weighted stochastic energy.
+edges:
+  proves:
+    - main.claim.free_decay
+  uses:
+    - main.model.forward_semidiscrete_system
+    - main.setting.spectral_spaces

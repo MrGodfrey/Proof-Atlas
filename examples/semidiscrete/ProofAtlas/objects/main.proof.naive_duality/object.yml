@@ -1,0 +1,15 @@
+uid: obj_20260611_ee01
+name: main.proof.naive_duality
+kind: math
+role: proof_fragment
+display_as: proof_fragment
+importance: local
+title: Naive one-shot duality route
+status: obsolete
+body:
+  - proof.md
+summary: Historical failed route replaced by the interval-by-interval construction.
+edges:
+  related_to:
+    - main.issue.adaptedness
+    - main.construction.partial_control_duality

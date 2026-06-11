@@ -1,0 +1,5 @@
+schema_version: "0.1"
+project: bad-fixture
+title: Bad fixture
+default_view: views/dashboard.md
+math_renderer: katex

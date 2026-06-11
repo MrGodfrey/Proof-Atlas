@@ -1,0 +1,15 @@
+uid: obj_20260611_f022
+name: main.eq.lr_low_mode_cancellation
+kind: math
+role: claim
+display_as: equation
+importance: supporting
+title: Low-mode cancellation after the controlled subinterval
+status: needs_check
+body:
+  - statement.md
+summary: Partial null controllability kills the projection onto E_j at the end of the controlled subinterval.
+edges:
+  uses:
+    - main.claim.partial_null_control
+    - main.construction.lr_time_grid

@@ -1,0 +1,15 @@
+uid: obj_20260611_f023
+name: main.eq.lr_control_estimate
+kind: math
+role: claim
+display_as: equation
+importance: supporting
+title: Control estimate on one Lebeau-Robbiano subinterval
+status: needs_check
+body:
+  - statement.md
+summary: Subinterval version of the partial null-control cost used to sum the full control.
+edges:
+  uses:
+    - main.claim.partial_null_control
+    - main.construction.lr_time_grid

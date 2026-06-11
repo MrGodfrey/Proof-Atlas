@@ -1,0 +1,5 @@
+schema_version: "0.1"
+project: rename-fixture
+title: Rename fixture
+default_view: views/paper.md
+math_renderer: katex

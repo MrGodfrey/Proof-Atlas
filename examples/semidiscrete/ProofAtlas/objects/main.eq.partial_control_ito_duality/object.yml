@@ -1,0 +1,15 @@
+uid: obj_20260611_f021
+name: main.eq.partial_control_ito_duality
+kind: math
+role: claim
+display_as: equation
+importance: supporting
+title: Ito duality identity for the forward and adjoint systems
+status: needs_check
+body:
+  - statement.md
+summary: Ito's formula pairs the controlled forward equation with the backward adjoint equation.
+edges:
+  uses:
+    - main.model.forward_semidiscrete_system
+    - main.model.backward_adjoint_system

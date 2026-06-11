@@ -1,0 +1,14 @@
+uid: obj_20260611_f008
+name: main.construction.lr_time_grid
+kind: math
+role: construction
+display_as: construction
+importance: supporting
+title: Lebeau-Robbiano time grid
+status: checked
+body:
+  - body.md
+summary: The summable sequence of controlled and free intervals used in the main iteration.
+edges:
+  uses:
+    - main.setting.spectral_spaces
