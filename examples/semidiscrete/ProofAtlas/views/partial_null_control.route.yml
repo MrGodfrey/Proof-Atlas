@@ -1,0 +1,31 @@
+schema_version: '0.1'
+uid: view_20260618_partial_null_control
+type: route
+title: Why partial null controllability holds
+target: main.claim.partial_null_control
+profile: proof
+proof_choices:
+  main.claim.partial_null_control: main.proof.partial_null_control
+  main.claim.observability: main.proof.observability
+boundaries: []
+representation:
+  main.claim.partial_null_control: full
+  main.model.forward_semidiscrete_system: statement
+  main.proof.partial_null_control: full
+  main.setting.spectral_spaces: statement
+  main.claim.observability: statement
+  main.construction.partial_control_duality: statement
+  main.eq.partial_control_ito_duality: statement
+  main.eq.partial_control_representation: statement
+  main.model.backward_adjoint_system: statement
+  main.setting.discrete_mesh: statement
+  main.setting.domain_and_coefficients: statement
+  main.setting.grid_operator: statement
+  main.setting.probability_and_spaces: statement
+  main.proof.observability: full
+  main.claim.partial_discrete_lr: statement
+  main.eq.observability_spectral_bound: statement
+render:
+  order: prerequisites_first
+  show_graph: true
+  show_status: true

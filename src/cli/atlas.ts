@@ -18,6 +18,7 @@ import { hasCheckErrors } from "../core/problems";
 import { expandHome, ProjectError, resolveAtlasProject } from "../core/project";
 import { formatLocalReference } from "../core/reference";
 import { resolveRoute, type ResolvedRoute } from "../core/routeResolver";
+import { DEFAULT_DEV_SERVER_PORT } from "../core/serverConfig";
 import { applySuggestionSet, createSuggestionSet, readSuggestionSet } from "../core/suggestions";
 import {
   listRegistryProjects,
@@ -704,7 +705,7 @@ async function main(): Promise<void> {
 
   program.command("dev")
     .argument("[project]", "ProofAtlas directory, workspace directory, or registry project id")
-    .option("--port <port>", "HTTP port", (value) => Number.parseInt(value, 10), 3217)
+    .option("--port <port>", "HTTP port", (value) => Number.parseInt(value, 10), DEFAULT_DEV_SERVER_PORT)
     .action(async (project, options) => {
       await startDevServer(await resolveDevProject(project), { port: options.port });
     });

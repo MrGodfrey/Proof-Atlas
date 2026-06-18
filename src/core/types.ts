@@ -98,6 +98,18 @@ export const STATUS = [
 ] as const;
 export type ObjectStatus = (typeof STATUS)[number];
 
+export const STATUS_HELP: Record<ObjectStatus, string> = {
+  draft: "New or provisional content; structure and truth may still change.",
+  partial: "Substantial content exists, but the object is intentionally incomplete.",
+  needs_check: "The object looks usable, but a human or trusted process still needs to verify it.",
+  checked: "The object has been reviewed and is currently treated as reliable.",
+  open: "An issue is unresolved and should remain visible as active work.",
+  resolved: "An issue has been handled; keep it for traceability unless it is obsolete.",
+  disproved: "A mathematical claim, proof route, or issue hypothesis is known to be false or failed.",
+  obsolete: "Superseded by a newer object; keep for history but do not use as the current route.",
+  archived: "Historical or inactive material that should normally stay out of active routes."
+};
+
 export const PRIORITY = ["blocker", "high", "normal", "low"] as const;
 export type IssuePriority = (typeof PRIORITY)[number];
 
@@ -269,6 +281,21 @@ export interface AtlasView {
 
 export type RouteProfile = "meaning" | "proof" | "audit" | "history";
 export type RepresentationMode = "full" | "statement" | "summary" | "reference" | "omit";
+
+export const ROUTE_PROFILE_HELP: Record<RouteProfile, string> = {
+  meaning: "Explain the target by expanding hard requires dependencies; use for definitions, assumptions, models, and statement context.",
+  proof: "Resolve a proof route for the target; select proof objects for claims and expand their hard uses/requires dependencies.",
+  audit: "Use proof behavior and additionally include blocking issues as soft audit context.",
+  history: "Follow hard refines, replaces, and cites edges to reconstruct provenance, prior versions, and source context."
+};
+
+export const REPRESENTATION_HELP: Record<RepresentationMode, string> = {
+  full: "Export every body file for the object; use for the target, selected proofs, and objects whose full argument is needed.",
+  statement: "Export the statement-level source only; use for hard dependencies whose content must be known but whose proof can stay out of context.",
+  summary: "Export only object.summary; use for soft context when a short reminder is enough.",
+  reference: "Export metadata only and no body text; use for citations, provenance, or objects that only need to be named.",
+  omit: "Export no metadata body for this route node; valid only for soft context and never for hard dependencies."
+};
 
 export interface RouteRenderOptions {
   order?: "prerequisites_first";

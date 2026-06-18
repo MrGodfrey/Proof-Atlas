@@ -5,6 +5,7 @@ import chokidar, { type FSWatcher } from "chokidar";
 import { buildBodyFiles, buildGraph, findObject } from "../core/graph";
 import { formatLocalReference, type ReferenceSelection } from "../core/reference";
 import { listRegistryProjects, registerResolvedProject, resolveProjectPathOrId } from "../core/registry";
+import { DEV_SERVER_HOST } from "../core/serverConfig";
 import type { NormalizedGraph, ResolvedAtlasProject } from "../core/types";
 
 interface DevServerOptions {
@@ -220,8 +221,9 @@ export async function startDevServer(initialProject: ResolvedAtlasProject | unde
       }
     }, react()],
     server: {
-      host: "127.0.0.1",
-      port: options.port
+      host: DEV_SERVER_HOST,
+      port: options.port,
+      strictPort: true
     },
     appType: "spa"
   });

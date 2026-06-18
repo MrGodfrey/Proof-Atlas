@@ -48,7 +48,7 @@ type AppState =
 type RouteState =
   | { mode: "view"; viewName: string; focus?: string; side?: string }
   | { mode: "route"; routeName: string; side?: string }
-  | { mode: "object"; objectId: string };
+  | { mode: "object"; objectId: string; side?: string };
 
 type Toast = { text: string; title: string } | null;
 type CenterScrollMode = "top" | "preserve";
@@ -96,7 +96,12 @@ function defaultDetailWidth(): number {
 function parseRoute(): RouteState {
   const path = window.location.pathname;
   if (path.startsWith("/object/")) {
-    return { mode: "object", objectId: decodeURIComponent(path.slice("/object/".length)) };
+    const params = new URLSearchParams(window.location.search);
+    return {
+      mode: "object",
+      objectId: decodeURIComponent(path.slice("/object/".length)),
+      side: params.get("side") ?? undefined
+    };
   }
   if (path.startsWith("/view/")) {
     const viewName = decodeURIComponent(path.slice("/view/".length)) || "dashboard";
@@ -135,8 +140,11 @@ function routeGeneratedView(view: AtlasRouteView, side?: string): string {
   return `/route/${encodeURIComponent(view.name)}${query ? `?${query}` : ""}`;
 }
 
-function objectHref(object: NormalizedObject): string {
-  return `/object/${encodeURIComponent(object.uid)}`;
+function objectHref(object: NormalizedObject, side?: string): string {
+  const params = new URLSearchParams();
+  if (side) params.set("side", side);
+  const query = params.toString();
+  return `/object/${encodeURIComponent(object.uid)}${query ? `?${query}` : ""}`;
 }
 
 function defaultObjectForView(view: AtlasView, graph: NormalizedGraph): NormalizedObject | undefined {
@@ -579,6 +587,19 @@ export default function App() {
     };
   }, [resizeDrag]);
 
+  useEffect(() => {
+    if (!projectOpen && !filterOpen && !buildOpen) return undefined;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".top-popover-anchor")) return;
+      setProjectOpen(false);
+      setFilterOpen(false);
+      setBuildOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [buildOpen, filterOpen, projectOpen]);
+
   const graph = appState.mode === "project" ? appState.graph : null;
   const objectsByUid = graph?.objectsByUid ?? {};
   const objectsByName = graph?.objectsByName ?? {};
@@ -614,7 +635,7 @@ export default function App() {
       ?? graph.routeViews[0];
   }, [graph, route]);
 
-  const sideObject = (route.mode === "view" || route.mode === "route") && route.side
+  const sideObject = (route.mode === "view" || route.mode === "route" || route.mode === "object") && route.side
     ? (objectsByUid[route.side] ?? objectsByName[route.side])
     : undefined;
   const fullObject = route.mode === "object"
@@ -658,13 +679,17 @@ export default function App() {
     setFilterOpen(false);
     setBuildOpen(false);
     setDetailDismissed(false);
+    if (route.mode === "object" && fullObject) {
+      navigate(objectHref(fullObject, object.uid), "preserve");
+      return;
+    }
     if (route.mode === "route" && currentRouteView) {
       navigate(routeGeneratedView(currentRouteView, object.uid), "preserve");
       return;
     }
     if (!currentView) return;
     navigate(routeView(currentView, object.uid, object.uid), "preserve");
-  }, [currentRouteView, currentView, navigate, route.mode]);
+  }, [currentRouteView, currentView, fullObject, navigate, route.mode]);
 
   const openFull = useCallback((object: NormalizedObject) => {
     setFilterOpen(false);
@@ -682,9 +707,9 @@ export default function App() {
   const openRouteView = useCallback((view: AtlasRouteView) => {
     setFilterOpen(false);
     setBuildOpen(false);
-    setDetailDismissed(false);
-    navigate(routeGeneratedView(view));
-  }, [navigate]);
+    const preservedSide = detailDismissed ? undefined : sideObject?.uid;
+    navigate(routeGeneratedView(view, preservedSide));
+  }, [detailDismissed, navigate, sideObject?.uid]);
 
   const ensureBody = useCallback(async (uid: string) => {
     if (bodyCache[uid]) return;
@@ -728,12 +753,16 @@ export default function App() {
 
   const closeDetailPanel = useCallback(() => {
     setDetailDismissed(true);
+    if (route.mode === "object" && fullObject) {
+      navigate(objectHref(fullObject), "preserve");
+      return;
+    }
     if (route.mode === "route" && currentRouteView) {
       navigate(routeGeneratedView(currentRouteView), "preserve");
       return;
     }
     if (currentView) navigate(routeView(currentView, route.mode === "view" ? route.focus : undefined), "preserve");
-  }, [currentRouteView, currentView, navigate, route]);
+  }, [currentRouteView, currentView, fullObject, navigate, route]);
 
   const startResize = useCallback((side: "left" | "right", event: ReactMouseEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -794,7 +823,11 @@ export default function App() {
   const errorCount = graph.problems.filter((item) => item.severity === "error").length;
   const warningCount = graph.problems.filter((item) => item.severity === "warning").length;
   const buildState = errorCount ? "error" : warningCount ? "warning" : "ok";
-  const currentLabel = route.mode === "route" && currentRouteView ? currentRouteView.title : currentView ? viewLabel(currentView) : "View";
+  const currentLabel = route.mode === "object" && fullObject
+    ? fullObject.title
+    : route.mode === "route" && currentRouteView
+      ? currentRouteView.title
+      : currentView ? viewLabel(currentView) : "View";
   const appShellStyle = {
     "--left-width": `${leftWidth}px`,
     "--detail-width": `${detailWidth}px`
@@ -802,7 +835,7 @@ export default function App() {
 
   return (
     <div
-      className={`app-shell ${leftOpen ? "left-visible" : ""} ${sideObject && (route.mode === "view" || route.mode === "route") ? "side-visible" : ""} ${resizeDrag ? "is-resizing" : ""}`}
+      className={`app-shell ${leftOpen ? "left-visible" : ""} ${sideObject && (route.mode === "view" || route.mode === "route" || route.mode === "object") ? "side-visible" : ""} ${resizeDrag ? "is-resizing" : ""}`}
       style={appShellStyle}
     >
       <TopBar
@@ -865,8 +898,6 @@ export default function App() {
               onSelect={selectObject}
               onOpenFull={openFull}
               onBack={() => currentView && navigate(routeView(currentView))}
-              onHistoryBack={() => goHistory(-1)}
-              onHistoryForward={() => goHistory(1)}
               onCopy={copyReference}
               copied={copiedUid === fullObject.uid}
               onOpenPreview={openOverlay}
@@ -901,10 +932,10 @@ export default function App() {
             <div className="empty-state">No view found.</div>
           )}
         </main>
-        {sideObject && (route.mode === "view" || route.mode === "route") && (
+        {sideObject && (route.mode === "view" || route.mode === "route" || route.mode === "object") && (
           <ColumnResizer side="right" label="Resize detail column" onMouseDown={(event) => startResize("right", event)} />
         )}
-        {sideObject && (route.mode === "view" || route.mode === "route") && (
+        {sideObject && (route.mode === "view" || route.mode === "route" || route.mode === "object") && (
           <DetailPanel
             graph={graph}
             object={sideObject}
@@ -1151,9 +1182,9 @@ function TopBar(props: {
   return (
     <header className="topbar">
       <button className="icon-button" title="Toggle navigation" onClick={props.onToggleLeft}><Menu size={16} /></button>
-      <span className="project-name">{props.graph.config.title}</span>
+      <span className="project-name" title={props.graph.config.title}>{props.graph.config.title}</span>
       <span className="top-slash">/</span>
-      <span className="current-view">{props.currentLabel}</span>
+      <span className="current-view" title={props.currentLabel}>{props.currentLabel}</span>
       <div className="top-spacer" />
       {props.buildFlash && <span className="build-flash">{props.buildFlash}</span>}
       <ProjectSwitcher
@@ -1801,9 +1832,27 @@ function GeneratedRoutePane(props: {
           <p className="view-subtitle"><code>{resolved.target.name}</code> · {resolved.profile} · {routeStatusLabel} · spine {spineNodes.length} / context {vocabularyNodes.length} · {resolved.nodes.length} objects · {resolved.totalTokens} tokens</p>
         </div>
         <div className="generated-actions">
-          <button className="toolbar-button" onClick={() => void copyCommand(routeCommand)}><Copy size={13} /> Route</button>
-          <button className="toolbar-button" onClick={() => void copyCommand(localAiRequest)}><Copy size={13} /> Local AI</button>
-          <button className="toolbar-button" onClick={() => void copyCommand(exportCommand)}><Copy size={13} /> Export</button>
+          <button
+            className="toolbar-button"
+            title="Copy the CLI command that resolves this generated route."
+            onClick={() => void copyCommand(routeCommand)}
+          >
+            <Copy size={13} /> Route
+          </button>
+          <button
+            className="toolbar-button"
+            title="Copy a local-AI prompt with this project and route context."
+            onClick={() => void copyCommand(localAiRequest)}
+          >
+            <Copy size={13} /> Local AI
+          </button>
+          <button
+            className="toolbar-button"
+            title="Copy the CLI command that exports this route as Markdown."
+            onClick={() => void copyCommand(exportCommand)}
+          >
+            <Copy size={13} /> Export
+          </button>
         </div>
       </div>
       <div className="segmented-control">
@@ -2538,8 +2587,6 @@ function FullObjectPage(props: {
   onSelect: (object: NormalizedObject) => void;
   onOpenFull: (object: NormalizedObject) => void;
   onBack: () => void;
-  onHistoryBack: () => void;
-  onHistoryForward: () => void;
   onCopy: (object: NormalizedObject) => Promise<void>;
   copied: boolean;
   onOpenPreview: (object: NormalizedObject) => void;
@@ -2555,23 +2602,25 @@ function FullObjectPage(props: {
     .filter((item): item is { label: string; object: NormalizedObject } => Boolean(item.object));
   return (
     <div className="full-page reading-shell">
-      <div className="history-nav">
-        <button className="icon-button" title="Back" onClick={props.onHistoryBack}><ArrowLeft size={15} /></button>
-        <button className="icon-button" title="Forward" onClick={props.onHistoryForward}><ArrowRight size={15} /></button>
-      </div>
       <div className="breadcrumb">
         <button onClick={props.onBack}>Paper view</button>
         <span>/</span>
         <code>{props.object.name}</code>
       </div>
       <div className="full-title">
-        <span style={{ color: statusColor(props.object.status) }}>{kindIcon(props.object.kind, 18)}</span>
         <h1>{props.object.title}</h1>
-        <span className="status-badge" style={{ background: statusColor(props.object.status) }}>{props.object.status}</span>
-        <button className="copy-inline" onClick={() => void props.onCopy(props.object)}>
-          {props.copied ? <Check size={14} /> : <Copy size={14} />}
-          {props.copied ? "Copied" : "Copy local AI reference"}
-        </button>
+        <div className="full-title-actions">
+          <span className="status-badge" style={{ background: statusColor(props.object.status) }}>{props.object.status}</span>
+          <button
+            className="copy-inline"
+            title={props.copied ? "Copied" : "Copy local AI reference"}
+            aria-label={props.copied ? "Copied" : "Copy local AI reference"}
+            onClick={() => void props.onCopy(props.object)}
+          >
+            {props.copied ? <Check size={14} /> : <Copy size={14} />}
+            {props.copied ? "Copied" : "AI ref"}
+          </button>
+        </div>
       </div>
       <MarkdownBody
         graph={props.graph}

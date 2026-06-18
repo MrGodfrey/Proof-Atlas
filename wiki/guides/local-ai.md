@@ -32,6 +32,14 @@ tex_main: main.tex
 npm run atlas -- locate obj_20260611_a7f3 examples/semidiscrete
 ```
 
+定位后按当前文件系统为准：
+
+1. 读取定位结果中的 `object.yml`。
+2. 读取 `body` 列出的 Markdown 文件。
+3. 如果要理解字段和值，先读 [对象协议](../reference/object-protocol.md)。
+4. 如果要生成或修改 Generated View / route，读 [Route 与导出](../reference/routes-and-export.md)。
+5. 如果要改依赖关系，读 [边语义](../reference/edges.md)。
+
 ## 选区规则
 
 如果引用包含 `selection`：
@@ -49,3 +57,18 @@ selection:
 ## 为什么不复制全文
 
 本地 AI 能直接读本地文件。复制短引用比复制完整正文更稳定，也更适合后续自动修改对象、依赖和状态。
+
+## 本地 AI 操作清单
+
+收到 `ProofAtlas local reference` 后，自动化工具应遵循：
+
+1. 不要只相信 `path`。先用 `uid` 定位当前对象，因为对象可能被 rename。
+2. 不要改 `uid`。需要改语义名时使用 `npm run atlas -- rename old.name new.name <project>`。
+3. 修改 `object.yml` 字段时，只使用 wiki 中列出的枚举值。
+4. 新增数学结论时通常从 `status: needs_check` 开始；人工核对后再改 `checked`。
+5. 失败路线用 `status: disproved`，过时路线用 `status: obsolete`，不要写 `status: false`。
+6. 新增 proof 时，在 proof 对象写 `edges.proves -> claim`，在 proof 上写证明依赖 `edges.uses`。
+7. claim 的 statement 依赖写 `edges.requires`，不要把证明依赖直接写到 claim 的 `uses`。
+8. 生成 route 时，`representation` 只能使用 `full`、`statement`、`summary`、`reference`、`omit`。
+9. route 的 hard dependency 不得设为 `omit`；proof/meaning route 的 hard dependency 通常至少要 `statement`。
+10. 修改后运行 `npm run atlas -- check --strict <paper-root-or-ProofAtlas-root>`。
