@@ -8,8 +8,10 @@ title: Free high-frequency decay
 status: needs_check
 body:
   - statement.md
-summary: If the low projection vanishes and the control is zero, the remaining high modes decay at rate controlled by the first active eigenvalue.
+summary: >-
+  If the low projection vanishes and the control is zero, the remaining high modes decay at rate
+  controlled by the first active eigenvalue.
 edges:
-  uses:
-    - main.model.forward_semidiscrete_system
-    - main.setting.spectral_spaces
+  requires:
+    - target: main.model.forward_semidiscrete_system
+    - target: main.setting.spectral_spaces

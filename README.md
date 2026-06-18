@@ -10,7 +10,8 @@ Mathematical writing is linear at the end, but research rarely is. A theorem dep
 
 - A file format for proof objects: claims, proofs, equations, models, constructions, calculations, issues, and literature notes.
 - A graph-aware local web UI with views, object cards, dependency links, reverse links, status, and KaTeX rendering.
-- A CLI for initializing projects, validating object graphs, locating objects by stable IDs, creating objects, and safely renaming object references.
+- A CLI for initializing projects, validating object graphs, locating objects by stable IDs, creating objects, resolving generated proof routes, exporting cloud contexts, and safely renaming object references.
+- Generated Views that separate the proof spine from vocabulary/context nodes, boundary assumptions, and open obligations.
 - Obsidian-style object links such as `[[main.claim.observability]]` and view embeds such as `![[main.proof.lr_iteration]]{expanded}`.
 - Stable local references that can be copied into local AI workflows without pasting whole proof bodies.
 - A real example atlas for a semi-discrete stochastic controllability proof.
@@ -75,6 +76,13 @@ Rename an object and rewrite YAML edges plus Markdown links:
 npm run atlas -- rename old.name new.name examples/semidiscrete/ProofAtlas
 ```
 
+Resolve a generated proof route and export a cloud-readable context:
+
+```bash
+npm run atlas -- route views/null_controllability.route.yml examples/semidiscrete/ProofAtlas
+npm run atlas -- export views/null_controllability.route.yml examples/semidiscrete/ProofAtlas --format markdown
+```
+
 ## Project Shape
 
 ```text
@@ -100,11 +108,12 @@ The `uid` is the permanent identity. The `name` is the readable reference used i
 ## Documentation
 
 - [Wiki home](wiki/README.md)
-- [中文维基](wiki/README.zh-CN.md)
-- [Getting started](wiki/getting-started.md)
-- [Object model](wiki/object-model.md)
-- [Local AI workflow](wiki/local-ai.md)
-- [Semi-discrete example](wiki/example-semidiscrete.md)
+- [Quick start](wiki/guides/quick-start.md)
+- [Concepts and workflows](wiki/guides/concepts-and-workflows.md)
+- [Navigation and UI controls](wiki/guides/navigation.md)
+- [Routes and export](wiki/reference/routes-and-export.md)
+- [Local AI workflow](wiki/guides/local-ai.md)
+- [Semi-discrete example](wiki/examples/semidiscrete-paper.md)
 
 ## Development
 

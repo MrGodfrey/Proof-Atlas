@@ -8,7 +8,9 @@ title: Domain, control region, and diffusion coefficient assumptions
 status: checked
 body:
   - body.md
-summary: Spatial cube, control set, diagonal diffusion tensor regularity, and coefficient process assumptions.
+summary: >-
+  Spatial cube, control set, diagonal diffusion tensor regularity, and coefficient process
+  assumptions.
 edges:
-  uses:
-    - main.setting.probability_and_spaces
+  requires:
+    - target: main.setting.probability_and_spaces

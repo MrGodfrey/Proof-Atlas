@@ -11,5 +11,5 @@ body:
 summary: Title, abstract, and keywords of the paper.
 edges:
   related_to:
-    - main.problem.control_question
-    - main.claim.null_controllability
+    - target: main.problem.control_question
+    - target: main.claim.null_controllability

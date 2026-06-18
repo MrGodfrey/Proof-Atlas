@@ -1,0 +1,81 @@
+# 校验与常见错误
+
+普通校验：
+
+```bash
+npm run atlas -- check examples/semidiscrete
+```
+
+严格校验：
+
+```bash
+npm run atlas -- check --strict examples/semidiscrete
+```
+
+## strict 模式会失败的错误
+
+- 重复 `uid`
+- 重复 `name`
+- 非法 `kind`
+- 非法 `role`
+- 非法 `display_as`
+- 非法 `importance`
+- 非法 `status`
+- 非法 `priority`
+- 非法 `provenance`
+- 非法 edge type 或 edge ref schema
+- `body` 指向不存在的 Markdown 文件
+- `edges` 指向不存在对象
+- hard `requires` / hard `uses` 投影中存在环
+- route 缺少 `uid`、`title` 或 `target`
+- route `type` 不是 `route`
+- route `profile` 不是 `meaning`、`proof`、`audit` 或 `history`
+- route `target`、`proof_choices`、`boundaries`、`representation` 或 `render.order_hints` 引用不存在对象
+- route `claim -> proof` 选择不成立
+- route `representation` 值不是 `full`、`statement`、`summary`、`reference` 或 `omit`
+- proof/meaning route 中 hard dependency 被设置为 `omit` 或低于表示粒度下限
+- proof/meaning route 中 hard dependency 需要 `statement` 但无法按 v1 规则抽取
+- Markdown 链接指向不存在对象
+- view 嵌入不存在对象
+- 对象正文中出现 `![[...]]`
+- 对象正文中出现 TeX 宏定义 `\newcommand`、`\renewcommand` 或 `\def`
+
+## 常见 warning
+
+warning 不一定让普通构图失败，但会出现在网页顶部构建状态和 `npm run atlas -- check` 输出中：
+
+- `alias_reference`：仍在使用旧 alias；建议改成当前对象名。
+- `folder_name_mismatch`：对象目录名和 `object.yml` 里的 `name` 不一致；通常应使用 `npm run atlas -- rename` 修正。
+- `object_body_h1`：对象正文以一级标题开头；对象标题已经由 `object.yml` 提供，正文不应再写 H1。
+- `embed_option_spacing`：`![[name]] {expanded}` 中 `{expanded}` 前多了空格，应写成 `![[name]]{expanded}`。
+- `status_kind_combo`：`kind` 和 `status` 组合不符合推荐用法。
+- `blocks_from_non_issue`：非 issue 对象写了 `blocks`。
+- `proves_shape`：非 proof / proof_fragment 对象写了 `proves`。
+- `uses_points_to_proof`：`uses` 指向 proof 对象；通常应使用 proof 的 `proves` 和 `uses` 建模。
+- `claim_uses_own_proof`：claim 的 `uses` 指向证明自己的 proof。
+- `claim_uses_dependency`：claim 写了证明依赖型 `uses`；通常应移动到对应 proof 的 `uses`。
+- `needs_confirmation`：route 有多个合理 proof 候选，resolver 使用了确定性默认选择，但建议人工确认。
+- `profile_target_mismatch`：route profile 和 target role 不太匹配，例如对非 claim 对象强制使用 `proof` profile。
+
+## TeX 宏检查
+
+代码块中的 TeX 宏不会报错，因为它们只是代码文本。
+
+普通正文和数学环境中的宏定义会报错。对象正文应直接写可渲染的数学内容，不应携带 preamble 配置。
+
+## 维护清单
+
+改对象时检查：
+
+1. `object.yml` 的 `uid` 不变。
+2. `name` 改动必须用 `npm run atlas -- rename`。
+3. 新 body 文件必须列入 `body`。
+4. 正文里的普通链接目标存在。
+5. view 里的嵌入目标存在。
+6. `edges` 只写正向边。
+7. `requires` 和 `uses` 的 hard 投影无环。
+8. `views/*.route.yml` 中的 target、proof choices、boundary 和 representation 引用仍然有效。
+9. `status` 和 `kind` 组合合理。
+10. 不在对象正文中写 `![[...]]`。
+11. 不在对象正文数学环境中定义 TeX 宏。
+12. 提交前运行 `npm run atlas -- check --strict <paper-root>` 或 `npm run atlas -- check --strict <ProofAtlas path>`。

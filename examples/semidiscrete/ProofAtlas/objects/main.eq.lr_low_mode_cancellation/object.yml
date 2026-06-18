@@ -8,8 +8,9 @@ title: Low-mode cancellation after the controlled subinterval
 status: needs_check
 body:
   - statement.md
-summary: Partial null controllability kills the projection onto E_j at the end of the controlled subinterval.
+summary: >-
+  Partial null controllability kills the projection onto E_j at the end of the controlled
+  subinterval.
 edges:
-  uses:
-    - main.claim.partial_null_control
-    - main.construction.lr_time_grid
+  requires:
+    - target: main.construction.lr_time_grid

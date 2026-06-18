@@ -10,5 +10,5 @@ body:
   - body.md
 summary: Mesh size, multi-index set, grid points, dual meshes, translated grids, and discrete boundaries.
 edges:
-  uses:
-    - main.setting.domain_and_coefficients
+  requires:
+    - target: main.setting.domain_and_coefficients

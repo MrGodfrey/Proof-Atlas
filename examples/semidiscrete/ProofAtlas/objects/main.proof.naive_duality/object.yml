@@ -11,5 +11,5 @@ body:
 summary: Historical failed route replaced by the interval-by-interval construction.
 edges:
   related_to:
-    - main.issue.adaptedness
-    - main.construction.partial_control_duality
+    - target: main.issue.adaptedness
+    - target: main.construction.partial_control_duality

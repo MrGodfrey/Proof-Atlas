@@ -8,9 +8,11 @@ title: Discrete operators and the weighted grid inner product
 status: checked
 body:
   - body.md
-summary: Translation, averaging, difference operators, the weighted inner product, and the discrete elliptic operator on the mesh.
+summary: >-
+  Translation, averaging, difference operators, the weighted inner product, and the discrete
+  elliptic operator on the mesh.
 edges:
-  uses:
-    - main.setting.domain_and_coefficients
-    - main.setting.probability_and_spaces
-    - main.setting.discrete_mesh
+  requires:
+    - target: main.setting.domain_and_coefficients
+    - target: main.setting.probability_and_spaces
+    - target: main.setting.discrete_mesh

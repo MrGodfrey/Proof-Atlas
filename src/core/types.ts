@@ -105,6 +105,7 @@ export const PROVENANCE = ["internal", "external", "imported"] as const;
 export type Provenance = (typeof PROVENANCE)[number];
 
 export const EDGE_TYPES = [
+  "requires",
   "uses",
   "proves",
   "blocks",
@@ -116,6 +117,7 @@ export const EDGE_TYPES = [
 export type EdgeType = (typeof EDGE_TYPES)[number];
 
 export const REVERSE_EDGE_TYPES = [
+  "required_by",
   "used_by",
   "proved_by",
   "blocked_by",
@@ -126,7 +128,16 @@ export const REVERSE_EDGE_TYPES = [
 ] as const;
 export type ReverseEdgeType = (typeof REVERSE_EDGE_TYPES)[number];
 
-export type EdgeMap = Partial<Record<EdgeType, string[]>>;
+export const EDGE_STRENGTHS = ["hard", "soft"] as const;
+export type EdgeStrength = (typeof EDGE_STRENGTHS)[number];
+
+export interface EdgeRef {
+  target: string;
+  strength: EdgeStrength;
+  reason?: string;
+}
+
+export type EdgeMap = Partial<Record<EdgeType, EdgeRef[]>>;
 export type ReverseEdgeMap = Partial<Record<ReverseEdgeType, string[]>>;
 
 export type ProblemSeverity = "error" | "warning";
@@ -144,12 +155,33 @@ export interface AtlasProblem {
   strict: boolean;
 }
 
+export interface AtlasWorkspaceConfig {
+  root?: string;
+  tex_main?: string;
+  bib?: string[];
+}
+
 export interface AtlasConfig {
   schema_version: "0.1";
   project: string;
   title: string;
   default_view: string;
-  math_renderer: "katex";
+  math_renderer: "katex" | "mathjax";
+  workspace?: AtlasWorkspaceConfig;
+}
+
+export interface ResolvedAtlasProject {
+  atlasRoot: string;
+  workspaceRoot: string | null;
+  configPath: string;
+  localConfigPath: string | null;
+  realAtlasRoot: string;
+}
+
+export interface NormalizedWorkspace {
+  root: string | null;
+  texMain: string | null;
+  bib: string[];
 }
 
 export interface RawObjectRecord {
@@ -227,6 +259,7 @@ export interface ViewEmbedItem {
 export type ViewItem = ViewHeadingItem | ViewMarkdownItem | ViewEmbedItem;
 
 export interface AtlasView {
+  type: "markdown";
   path: string;
   name: string;
   title: string;
@@ -234,14 +267,63 @@ export interface AtlasView {
   raw: string;
 }
 
+export type RouteProfile = "meaning" | "proof" | "audit" | "history";
+export type RepresentationMode = "full" | "statement" | "summary" | "reference" | "omit";
+
+export interface RouteRenderOptions {
+  order?: "prerequisites_first";
+  show_graph?: boolean;
+  show_status?: boolean;
+  order_hints?: string[];
+}
+
+export interface RouteView {
+  schema_version: "0.1";
+  uid: string;
+  type: "route";
+  title: string;
+  target: string;
+  profile: RouteProfile;
+  proof_choices: Record<string, string>;
+  boundaries: string[];
+  representation: Record<string, RepresentationMode>;
+  render: RouteRenderOptions;
+}
+
+export interface AtlasRouteView {
+  path: string;
+  name: string;
+  title: string;
+  raw: string;
+  route: RouteView;
+}
+
 export interface NormalizedGraph {
   root: string;
+  atlasRoot: string;
+  workspaceRoot: string | null;
+  configPath: string;
+  localConfigPath: string | null;
+  workspace: NormalizedWorkspace;
   config: AtlasConfig;
   objects: NormalizedObject[];
   objectsByUid: Record<string, NormalizedObject>;
   objectsByName: Record<string, NormalizedObject>;
   aliases: Record<string, string>;
   views: AtlasView[];
+  routeViews: AtlasRouteView[];
   problems: AtlasProblem[];
   builtAt: string;
+}
+
+export interface RegistryProjectEntry {
+  id: string;
+  title: string;
+  atlas_root: string;
+  workspace_root: string | null;
+  last_opened: string;
+}
+
+export interface RegistryProjectListItem extends RegistryProjectEntry {
+  missing: boolean;
 }

@@ -6,12 +6,15 @@ export async function readYamlFile<T = unknown>(filePath: string): Promise<T> {
   return yaml.load(text) as T;
 }
 
-export async function writeYamlFile(filePath: string, value: unknown): Promise<void> {
-  const text = yaml.dump(value, {
+export function stringifyYaml(value: unknown): string {
+  return yaml.dump(value, {
     lineWidth: 100,
     noRefs: true,
     sortKeys: false
   });
-  await fs.writeFile(filePath, text, "utf8");
 }
 
+export async function writeYamlFile(filePath: string, value: unknown): Promise<void> {
+  const text = stringifyYaml(value);
+  await fs.writeFile(filePath, text, "utf8");
+}

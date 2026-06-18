@@ -21,7 +21,7 @@ describe("Proof Atlas core", () => {
           role: "proof",
           title: "Proof A",
           body: ["proof.md"],
-          edges: { proves: ["main.claim.a"] }
+          edges: { proves: [{ target: "main.claim.a" }] }
         },
         bodies: { "proof.md": "Proof body.\n" }
       },
@@ -33,7 +33,10 @@ describe("Proof Atlas core", () => {
           role: "gap",
           title: "Blocker",
           body: ["note.md"],
-          edges: { blocks: ["main.proof.a"], related_to: ["main.claim.a"] }
+          edges: {
+            blocks: [{ target: "main.proof.a" }],
+            related_to: [{ target: "main.claim.a" }]
+          }
         },
         bodies: { "note.md": "Issue body.\n" }
       }
@@ -48,7 +51,7 @@ describe("Proof Atlas core", () => {
     expect(claim.provenance).toBe("internal");
     expect(claim.reverseEdges.proved_by).toContain("main.proof.a");
     expect(graph.objectsByName["main.proof.a"].reverseEdges.blocked_by).toContain("main.issue.blocker");
-    expect(claim.edges.related_to).toContain("main.issue.blocker");
+    expect(claim.edges.related_to?.map((ref) => ref.target)).toContain("main.issue.blocker");
     expect(hasCheckErrors(graph.problems, true)).toBe(false);
   });
 
@@ -97,7 +100,7 @@ describe("Proof Atlas core", () => {
           body: ["statement.md"],
           status: "false",
           display_as: "not_real",
-          edges: { uses: ["main.claim.missing"] }
+          edges: { uses: [{ target: "main.claim.missing" }] }
         },
         bodies: {
           "statement.md": "# Duplicate Title\n\nBad link [[main.claim.missing]].\n\n![[main.claim.a]]\n\n$\\newcommand{\\x}{x}$\n"
@@ -110,7 +113,8 @@ describe("Proof Atlas core", () => {
           kind: "math",
           role: "claim",
           title: "B",
-          body: ["missing.md"]
+          body: ["missing.md"],
+          edges: { related_to: ["main.claim.a"] }
         },
         bodies: {}
       }
@@ -122,6 +126,7 @@ describe("Proof Atlas core", () => {
     const codes = graph.problems.map((item) => item.code);
     expect(codes).toContain("status_false_forbidden");
     expect(codes).toContain("invalid_display_as");
+    expect(codes).toContain("invalid_edge_ref");
     expect(codes).toContain("missing_edge_target");
     expect(codes).toContain("missing_markdown_link");
     expect(codes).toContain("body_embed_forbidden");
@@ -149,7 +154,7 @@ describe("Proof Atlas core", () => {
     expect(graph.problems.find((item) => item.code === "tex_macro_forbidden")).toBeUndefined();
   });
 
-  it("warns on dependency cycles and uses edges to proof objects", async () => {
+  it("warns on uses edges to proof objects", async () => {
     const root = await tempDir("pa-cycle-");
     const project = await writeTestProject(root, [
       {
@@ -160,7 +165,7 @@ describe("Proof Atlas core", () => {
           role: "claim",
           title: "A",
           body: ["statement.md"],
-          edges: { uses: ["main.proof.a"] }
+          edges: { uses: [{ target: "main.proof.a" }] }
         }
       },
       {
@@ -171,15 +176,46 @@ describe("Proof Atlas core", () => {
           role: "proof",
           title: "Proof A",
           body: ["proof.md"],
-          edges: { proves: ["main.claim.a"] }
+          edges: { proves: [{ target: "main.claim.a" }] }
         },
         bodies: { "proof.md": "Proof.\n" }
       }
     ]);
     const graph = await buildGraph(project);
     expect(graph.problems.map((item) => item.code)).toContain("uses_points_to_proof");
-    expect(graph.problems.map((item) => item.code)).toContain("dependency_cycle");
+    expect(graph.problems.map((item) => item.code)).not.toContain("hard_dependency_cycle");
     expect(hasCheckErrors(graph.problems, false)).toBe(false);
+  });
+
+  it("reports strict errors for hard requires/uses cycles", async () => {
+    const root = await tempDir("pa-hard-cycle-");
+    const project = await writeTestProject(root, [
+      {
+        object: {
+          uid: "obj_20260611_aaaa",
+          name: "main.claim.a",
+          kind: "math",
+          role: "claim",
+          title: "A",
+          body: ["statement.md"],
+          edges: { requires: [{ target: "main.claim.b" }] }
+        }
+      },
+      {
+        object: {
+          uid: "obj_20260611_bbbb",
+          name: "main.claim.b",
+          kind: "math",
+          role: "claim",
+          title: "B",
+          body: ["statement.md"],
+          edges: { uses: [{ target: "main.claim.a" }] }
+        }
+      }
+    ]);
+    const graph = await buildGraph(project);
+    expect(graph.problems.map((item) => item.code)).toContain("hard_dependency_cycle");
+    expect(hasCheckErrors(graph.problems, true)).toBe(true);
   });
 
   it("formats local references and returns block metadata", async () => {

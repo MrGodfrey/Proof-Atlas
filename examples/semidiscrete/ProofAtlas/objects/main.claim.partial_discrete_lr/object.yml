@@ -9,9 +9,11 @@ title: Partial discrete Lebeau-Robbiano inequality
 status: checked
 body:
   - statement.md
-summary: Imported low-frequency discrete spectral inequality used to control partial sums below the mesh threshold.
+summary: >-
+  Imported low-frequency discrete spectral inequality used to control partial sums below the mesh
+  threshold.
 edges:
-  uses:
-    - main.setting.spectral_spaces
+  requires:
+    - target: main.setting.spectral_spaces
   cites:
-    - source.boyer_2010a
+    - target: source.boyer_2010a

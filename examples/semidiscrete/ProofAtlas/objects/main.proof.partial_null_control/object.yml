@@ -8,16 +8,18 @@ title: Proof of partial null controllability
 status: needs_check
 body:
   - proof.md
-summary: Build a bounded functional on observed adjoint traces, extend it by Hahn-Banach, represent it by a control, and verify P_j y(T)=0.
+summary: >-
+  Build a bounded functional on observed adjoint traces, extend it by Hahn-Banach, represent it by a
+  control, and verify P_j y(T)=0.
 edges:
   proves:
-    - main.claim.partial_null_control
+    - target: main.claim.partial_null_control
   uses:
-    - main.construction.partial_control_duality
-    - main.eq.partial_control_representation
-    - main.eq.partial_control_ito_duality
-    - main.claim.observability
-    - main.model.forward_semidiscrete_system
-    - main.model.backward_adjoint_system
+    - target: main.construction.partial_control_duality
+    - target: main.eq.partial_control_representation
+    - target: main.eq.partial_control_ito_duality
+    - target: main.claim.observability
+    - target: main.model.forward_semidiscrete_system
+    - target: main.model.backward_adjoint_system
   cites:
-    - source.lue_zhang_2021
+    - target: source.lue_zhang_2021

@@ -8,9 +8,10 @@ title: Pointwise observed low-frequency bound
 status: needs_check
 body:
   - statement.md
-summary: Applies the partial discrete Lebeau-Robbiano inequality to the adjoint eigenfunction expansion at each time.
+summary: >-
+  Applies the partial discrete Lebeau-Robbiano inequality to the adjoint eigenfunction expansion at
+  each time.
 edges:
-  uses:
-    - main.claim.partial_discrete_lr
-    - main.model.backward_adjoint_system
-    - main.setting.spectral_spaces
+  requires:
+    - target: main.model.backward_adjoint_system
+    - target: main.setting.spectral_spaces

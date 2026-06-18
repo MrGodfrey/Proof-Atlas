@@ -10,5 +10,5 @@ body:
   - statement.md
 summary: Elementary identities that reduce the iteration product to a negative exponential bound.
 edges:
-  uses:
-    - main.construction.lr_time_grid
+  requires:
+    - target: main.construction.lr_time_grid

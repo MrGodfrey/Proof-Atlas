@@ -8,9 +8,10 @@ title: Partial null controllability on a spectral window
 status: needs_check
 body:
   - statement.md
-summary: Uses observability to build an adapted control that kills the projection onto E_j and estimates both the control and final state.
+summary: >-
+  Uses observability to build an adapted control that kills the projection onto E_j and estimates
+  both the control and final state.
 edges:
-  uses:
-    - main.claim.observability
-    - main.model.forward_semidiscrete_system
-    - main.setting.spectral_spaces
+  requires:
+    - target: main.model.forward_semidiscrete_system
+    - target: main.setting.spectral_spaces

@@ -8,11 +8,13 @@ title: Control question for the semi-discrete stochastic parabolic equation
 status: checked
 body:
   - statement.md
-summary: Whether a drift-only adapted control can produce the paper's phi-null controllability conclusion for the semi-discrete stochastic parabolic system.
+summary: >-
+  Whether a drift-only adapted control can produce the paper's phi-null controllability conclusion
+  for the semi-discrete stochastic parabolic system.
 edges:
-  uses:
-    - main.model.continuous_problem
-    - main.model.forward_semidiscrete_system
+  requires:
+    - target: main.model.continuous_problem
+    - target: main.model.forward_semidiscrete_system
   cites:
-    - source.lue_2011
-    - source.zuazua_2005
+    - target: source.lue_2011
+    - target: source.zuazua_2005

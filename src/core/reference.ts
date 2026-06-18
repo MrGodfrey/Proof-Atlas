@@ -1,10 +1,19 @@
 import type { BodyBlock, NormalizedGraph, NormalizedObject } from "./types";
+import { relativePosix } from "./pathUtils";
 
 export interface ReferenceSelection {
   file: string;
   block: string;
   kind: BodyBlock["kind"];
   excerpt: string;
+}
+
+function displayPath(graph: NormalizedGraph, filePath: string): string {
+  if (graph.workspace.root) {
+    const relative = relativePosix(graph.workspace.root, filePath);
+    if (relative && !relative.startsWith("../") && relative !== "..") return relative;
+  }
+  return filePath;
 }
 
 export function formatLocalReference(
@@ -15,7 +24,9 @@ export function formatLocalReference(
   const lines = [
     "ProofAtlas local reference",
     `project: ${graph.config.project}`,
-    `root: ${graph.root}`,
+    `atlas_root: ${graph.atlasRoot}`,
+    `workspace_root: ${graph.workspace.root ?? ""}`,
+    ...(graph.workspace.texMain ? [`tex_main: ${displayPath(graph, graph.workspace.texMain)}`] : []),
     `uid: ${object.uid}`,
     `name: ${object.name}`,
     `path: ${object.objectPath}`,
@@ -33,4 +44,3 @@ export function formatLocalReference(
   }
   return `${lines.join("\n")}\n`;
 }
-

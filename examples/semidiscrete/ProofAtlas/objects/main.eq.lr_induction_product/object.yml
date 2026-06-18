@@ -10,7 +10,5 @@ body:
   - statement.md
 summary: Product estimate obtained by iterating the controlled and free subinterval bounds.
 edges:
-  uses:
-    - main.claim.partial_null_control
-    - main.claim.free_decay
-    - main.construction.lr_time_grid
+  requires:
+    - target: main.construction.lr_time_grid

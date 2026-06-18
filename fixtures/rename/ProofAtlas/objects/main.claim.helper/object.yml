@@ -7,4 +7,4 @@ body:
   - statement.md
 edges:
   related_to:
-    - main.claim.old
+    - target: main.claim.old

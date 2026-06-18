@@ -23,12 +23,18 @@ describe("atlas rename fixture", () => {
 
     const helperYaml = await readYamlFile<Record<string, unknown>>(path.join(project, "objects", "main.claim.helper", "object.yml"));
     expect(helperYaml).toMatchObject({
-      edges: { related_to: ["main.claim.new"] }
+      edges: { related_to: [{ target: "main.claim.new" }] }
     });
 
     const view = await fs.readFile(path.join(project, "views", "paper.md"), "utf8");
     expect(view).toContain("![[main.claim.new]]");
     expect(view).toContain("![[main.claim.new]]{expanded}");
+
+    const route = await readYamlFile<Record<string, unknown>>(path.join(project, "views", "old.route.yml"));
+    expect(route.target).toBe("main.claim.new");
+    expect(route.boundaries).toEqual(["main.claim.new"]);
+    expect(route.representation).toMatchObject({ "main.claim.new": "full" });
+    expect(route.render).toMatchObject({ order_hints: ["main.claim.new"] });
 
     const statement = await fs.readFile(path.join(project, "objects", "main.claim.new", "statement.md"), "utf8");
     expect(statement).toContain("[[main.claim.new|the old claim]]");
@@ -44,4 +50,3 @@ describe("atlas rename fixture", () => {
     expect(graph.problems.filter((item) => item.severity === "error")).toEqual([]);
   });
 });
-

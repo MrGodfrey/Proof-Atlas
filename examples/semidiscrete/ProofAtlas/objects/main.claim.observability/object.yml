@@ -8,9 +8,10 @@ title: Observability inequality for the backward semi-discrete system
 status: needs_check
 body:
   - statement.md
-summary: Bounds the initial energy of the backward adjoint solution by its observed L1-in-time norm on the control grid.
+summary: >-
+  Bounds the initial energy of the backward adjoint solution by its observed L1-in-time norm on the
+  control grid.
 edges:
-  uses:
-    - main.claim.partial_discrete_lr
-    - main.model.backward_adjoint_system
-    - main.setting.spectral_spaces
+  requires:
+    - target: main.model.backward_adjoint_system
+    - target: main.setting.spectral_spaces

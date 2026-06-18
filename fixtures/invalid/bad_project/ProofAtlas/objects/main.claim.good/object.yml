@@ -9,4 +9,4 @@ body:
   - statement.md
 edges:
   uses:
-    - main.claim.missing
+    - target: main.claim.missing

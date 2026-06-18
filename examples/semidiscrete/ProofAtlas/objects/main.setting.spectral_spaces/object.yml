@@ -8,7 +8,9 @@ title: Discrete eigenfunctions and spectral projectors
 status: checked
 body:
   - body.md
-summary: Eigenpairs of the discrete elliptic operator, the low-frequency spaces E_j, projectors P_j, and the mesh cutoff j^M.
+summary: >-
+  Eigenpairs of the discrete elliptic operator, the low-frequency spaces E_j, projectors P_j, and
+  the mesh cutoff j^M.
 edges:
-  uses:
-    - main.setting.grid_operator
+  requires:
+    - target: main.setting.grid_operator

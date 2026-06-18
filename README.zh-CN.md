@@ -2,7 +2,7 @@
 
 **Proof Atlas 是一个本地优先的数学研究工作台：用 Markdown 写证明正文，用 YAML 描述证明对象图，再用本地网页把整篇研究变成可点击的 atlas。**
 
-[English README](README.md) · [中文维基](wiki/README.zh-CN.md) · [示例项目](examples/semidiscrete/ProofAtlas)
+[English README](README.md) · [中文维基](wiki/README.md) · [示例项目](examples/semidiscrete/ProofAtlas)
 
 数学论文最终是线性的，但研究过程往往不是线性的。一个定理依赖若干引理，一个证明可能被某个 gap 阻塞，一条失败路线会被新路线替换，某篇文献可能只支撑一个关键估计。Proof Atlas 把这些关系显式保存下来，同时让事实源保持为普通文件，方便 Git、编辑器和本地 AI 直接读写。
 
@@ -10,7 +10,8 @@
 
 - 用文件协议组织数学对象：claim、proof、equation、model、construction、calculation、issue、literature note 等。
 - 提供图感知的本地网页界面：view、对象卡片、依赖边、反向边、状态和 KaTeX 渲染。
-- 提供 CLI：初始化项目、校验对象图、按稳定 ID 定位对象、创建对象、安全重命名对象引用。
+- 提供 CLI：初始化项目、校验对象图、按稳定 ID 定位对象、创建对象、解析生成式 proof route、导出云端上下文、安全重命名对象引用。
+- Generated View 会把证明主线、词汇上下文、boundary 假设和 open obligation 分开显示。
 - 支持类似 Obsidian 的对象链接：`[[main.claim.observability]]`，以及 view 嵌入：`![[main.proof.lr_iteration]]{expanded}`。
 - 复制稳定的本地 AI 引用，不需要把整段证明正文塞进剪贴板。
 - 自带一个半离散随机可控性证明的真实示例 atlas。
@@ -75,6 +76,13 @@ npm run atlas -- locate main.claim.null_controllability examples/semidiscrete/Pr
 npm run atlas -- rename old.name new.name examples/semidiscrete/ProofAtlas
 ```
 
+解析一条生成式 proof route，并导出云端可读上下文：
+
+```bash
+npm run atlas -- route views/null_controllability.route.yml examples/semidiscrete/ProofAtlas
+npm run atlas -- export views/null_controllability.route.yml examples/semidiscrete/ProofAtlas --format markdown
+```
+
 ## 项目结构
 
 ```text
@@ -99,12 +107,13 @@ ProofAtlas/
 
 ## 文档
 
-- [中文维基](wiki/README.zh-CN.md)
-- [英文维基](wiki/README.md)
-- [快速开始](wiki/getting-started.zh-CN.md)
-- [对象模型](wiki/object-model.zh-CN.md)
-- [本地 AI 工作流](wiki/local-ai.zh-CN.md)
-- [半离散示例](wiki/example-semidiscrete.zh-CN.md)
+- [维基首页](wiki/README.md)
+- [快速开始](wiki/guides/quick-start.md)
+- [核心概念与操作流程](wiki/guides/concepts-and-workflows.md)
+- [页面和跳转](wiki/guides/navigation.md)
+- [Route 与导出](wiki/reference/routes-and-export.md)
+- [本地 AI 工作流](wiki/guides/local-ai.md)
+- [半离散示例](wiki/examples/semidiscrete-paper.md)
 
 ## 开发
 

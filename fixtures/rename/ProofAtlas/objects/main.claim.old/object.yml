@@ -7,4 +7,4 @@ body:
   - statement.md
 edges:
   uses:
-    - main.claim.helper
+    - target: main.claim.helper

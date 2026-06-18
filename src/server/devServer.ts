@@ -4,7 +4,8 @@ import react from "@vitejs/plugin-react";
 import chokidar, { type FSWatcher } from "chokidar";
 import { buildBodyFiles, buildGraph, findObject } from "../core/graph";
 import { formatLocalReference, type ReferenceSelection } from "../core/reference";
-import type { NormalizedGraph } from "../core/types";
+import { listRegistryProjects, registerResolvedProject, resolveProjectPathOrId } from "../core/registry";
+import type { NormalizedGraph, ResolvedAtlasProject } from "../core/types";
 
 interface DevServerOptions {
   port: number;
@@ -37,44 +38,85 @@ function sendSse(res: import("node:http").ServerResponse): void {
   res.write(": connected\n\n");
 }
 
-export async function startDevServer(projectRoot: string, options: DevServerOptions): Promise<{ vite: ViteDevServer; watcher: FSWatcher }> {
-  let graph: NormalizedGraph = await buildGraph(projectRoot);
+export async function startDevServer(initialProject: ResolvedAtlasProject | undefined, options: DevServerOptions): Promise<{ vite: ViteDevServer; watcher?: FSWatcher }> {
+  let currentProject: ResolvedAtlasProject | undefined = initialProject;
+  let graph: NormalizedGraph | null = null;
+  let watcher: FSWatcher | undefined;
   let buildVersion = 0;
   const clients = new Set<import("node:http").ServerResponse>();
+  let timer: NodeJS.Timeout | undefined;
+
+  const emitBuildEvent = (payload: unknown) => {
+    const body = JSON.stringify(payload);
+    for (const client of clients) client.write(`event: build\ndata: ${body}\n\n`);
+  };
+
   const rebuild = async (reason: string) => {
+    if (!currentProject) return;
     try {
-      graph = await buildGraph(projectRoot);
+      graph = await buildGraph(currentProject);
       buildVersion += 1;
-      const payload = JSON.stringify({
+      emitBuildEvent({
         type: "rebuilt",
         version: buildVersion,
         reason,
         builtAt: graph.builtAt,
         problemCount: graph.problems.length
       });
-      for (const client of clients) client.write(`event: build\ndata: ${payload}\n\n`);
     } catch (error) {
-      const payload = JSON.stringify({ type: "error", reason, message: String(error) });
-      for (const client of clients) client.write(`event: build\ndata: ${payload}\n\n`);
+      emitBuildEvent({ type: "error", reason, message: String(error) });
     }
   };
 
-  const watcher = chokidar.watch([
-    path.join(projectRoot, "atlas.yml"),
-    path.join(projectRoot, "objects"),
-    path.join(projectRoot, "views"),
-    path.join(projectRoot, ".atlas", "aliases.yml")
-  ], {
-    ignoreInitial: true,
-    awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 50 }
-  });
-  let timer: NodeJS.Timeout | undefined;
-  watcher.on("all", (eventName, changedPath) => {
+  const closeWatcher = async () => {
     clearTimeout(timer);
-    timer = setTimeout(() => {
-      void rebuild(`${eventName} ${path.relative(projectRoot, changedPath)}`);
-    }, 180);
-  });
+    timer = undefined;
+    if (watcher) await watcher.close();
+    watcher = undefined;
+  };
+
+  const watchProject = () => {
+    if (!currentProject) return;
+    const projectRoot = currentProject.atlasRoot;
+    watcher = chokidar.watch([
+      path.join(projectRoot, "atlas.yml"),
+      path.join(projectRoot, "objects"),
+      path.join(projectRoot, "views"),
+      path.join(projectRoot, ".atlas", "aliases.yml"),
+      path.join(projectRoot, ".atlas", "local.yml")
+    ], {
+      ignoreInitial: true,
+      awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 50 }
+    });
+    watcher.on("all", (eventName, changedPath) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        void rebuild(`${eventName} ${path.relative(projectRoot, changedPath)}`);
+      }, 180);
+    });
+  };
+
+  const openProject = async (project: ResolvedAtlasProject, reason: string): Promise<NormalizedGraph> => {
+    await closeWatcher();
+    currentProject = project;
+    graph = await buildGraph(project);
+    const registered = await registerResolvedProject(project, graph.config);
+    if (registered.warning) console.warn(`warning: ${registered.warning}`);
+    watchProject();
+    buildVersion += 1;
+    emitBuildEvent({
+      type: "project_opened",
+      version: buildVersion,
+      reason,
+      builtAt: graph.builtAt,
+      problemCount: graph.problems.length
+    });
+    return graph;
+  };
+
+  if (currentProject) {
+    await openProject(currentProject, "initial");
+  }
 
   const apiMiddleware = async (
     req: import("node:http").IncomingMessage,
@@ -91,12 +133,50 @@ export async function startDevServer(projectRoot: string, options: DevServerOpti
       return;
     }
 
+    if (url.pathname === "/api/state") {
+      if (graph) {
+        sendJson(res, { mode: "project", graph });
+      } else {
+        sendJson(res, { mode: "launcher", projects: await listRegistryProjects() });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/projects") {
+      sendJson(res, { projects: await listRegistryProjects() });
+      return;
+    }
+
+    if (url.pathname === "/api/open" && req.method === "POST") {
+      const body = await readRequestBody(req);
+      const parsed = body ? JSON.parse(body) as { input?: string } : {};
+      if (!parsed.input?.trim()) {
+        sendJson(res, { error: "input is required" }, 400);
+        return;
+      }
+      try {
+        const opened = await openProject(await resolveProjectPathOrId(parsed.input), "api-open");
+        sendJson(res, { mode: "project", graph: opened });
+      } catch (error) {
+        sendJson(res, { error: error instanceof Error ? error.message : String(error) }, 400);
+      }
+      return;
+    }
+
     if (url.pathname === "/api/graph") {
-      sendJson(res, graph);
+      if (graph) {
+        sendJson(res, graph);
+      } else {
+        sendJson(res, { error: "No Proof Atlas project is open.", projects: await listRegistryProjects() }, 404);
+      }
       return;
     }
 
     if (url.pathname.startsWith("/api/object/") && url.pathname.endsWith("/body")) {
+      if (!graph) {
+        sendJson(res, { error: "No Proof Atlas project is open." }, 409);
+        return;
+      }
       const uid = decodeURIComponent(url.pathname.slice("/api/object/".length, -"/body".length));
       const object = findObject(graph, uid);
       if (!object) {
@@ -108,6 +188,10 @@ export async function startDevServer(projectRoot: string, options: DevServerOpti
     }
 
     if (url.pathname === "/api/reference" && req.method === "POST") {
+      if (!graph) {
+        sendJson(res, { error: "No Proof Atlas project is open." }, 409);
+        return;
+      }
       const body = await readRequestBody(req);
       const parsed = body ? JSON.parse(body) as { uid?: string; selection?: ReferenceSelection } : {};
       if (!parsed.uid) {
@@ -144,6 +228,7 @@ export async function startDevServer(projectRoot: string, options: DevServerOpti
 
   await vite.listen(options.port);
   vite.printUrls();
-  console.log(`Proof Atlas project: ${projectRoot}`);
+  const openedGraph = graph as NormalizedGraph | null;
+  console.log(openedGraph ? `Proof Atlas project: ${openedGraph.atlasRoot}` : "Proof Atlas launcher: no project open");
   return { vite, watcher };
 }

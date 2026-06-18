@@ -10,9 +10,8 @@ body:
   - statement.md
 summary: Riesz representation of the extended bounded functional by an adapted low-frequency control.
 edges:
-  uses:
-    - main.claim.observability
-    - main.model.backward_adjoint_system
-    - main.setting.spectral_spaces
+  requires:
+    - target: main.model.backward_adjoint_system
+    - target: main.setting.spectral_spaces
   cites:
-    - source.lue_zhang_2021
+    - target: source.lue_zhang_2021

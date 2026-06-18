@@ -8,12 +8,14 @@ title: Duality construction of the partial control
 status: needs_check
 body:
   - body.md
-summary: The observed adjoint trace space, bounded functional, Hahn-Banach extension, and Riesz representation used to build the partial control.
+summary: >-
+  The observed adjoint trace space, bounded functional, Hahn-Banach extension, and Riesz
+  representation used to build the partial control.
 edges:
-  uses:
-    - main.claim.observability
-    - main.model.backward_adjoint_system
-    - main.setting.spectral_spaces
-    - main.eq.partial_control_representation
+  requires:
+    - target: main.claim.observability
+    - target: main.model.backward_adjoint_system
+    - target: main.setting.spectral_spaces
+    - target: main.eq.partial_control_representation
   cites:
-    - source.lue_zhang_2021
+    - target: source.lue_zhang_2021

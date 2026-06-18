@@ -10,10 +10,10 @@ body:
   - body.md
 summary: The induction product and exponent calculation that yield the final exponential residual bound.
 edges:
-  uses:
-    - main.construction.lr_time_grid
-    - main.eq.lr_induction_product
-    - main.eq.lr_exponent_identities
-    - main.claim.partial_null_control
-    - main.claim.free_decay
-    - main.setting.spectral_spaces
+  requires:
+    - target: main.construction.lr_time_grid
+    - target: main.eq.lr_induction_product
+    - target: main.eq.lr_exponent_identities
+    - target: main.claim.partial_null_control
+    - target: main.claim.free_decay
+    - target: main.setting.spectral_spaces

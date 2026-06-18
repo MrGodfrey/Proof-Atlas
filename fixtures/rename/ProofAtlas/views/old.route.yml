@@ -1,0 +1,15 @@
+schema_version: '0.1'
+uid: view_20260618_old
+type: route
+title: Old Claim Route
+target: main.claim.old
+profile: meaning
+proof_choices: {}
+boundaries:
+  - main.claim.old
+representation:
+  main.claim.old: full
+render:
+  order: prerequisites_first
+  order_hints:
+    - main.claim.old

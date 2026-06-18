@@ -39,7 +39,7 @@ function protectedRanges(source: string, includeMath: boolean): Range[] {
   addRegexRanges(source, ranges, /`+[^`\n]*`+/g);
   if (includeMath) {
     addRegexRanges(source, ranges, /\$\$[\s\S]*?\$\$/g);
-    addRegexRanges(source, ranges, /(?<!\\)\$(?!\$)[\s\S]*?(?<!\\)\$/g);
+    addRegexRanges(source, ranges, /(?<![$\\])\$(?!\$)[\s\S]*?(?<!\\)\$(?!\$)/g);
   }
   ranges.sort((a, b) => a.start - b.start);
   return ranges;

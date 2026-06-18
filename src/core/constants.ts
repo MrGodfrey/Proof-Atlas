@@ -52,6 +52,7 @@ export const DEFAULT_DISPLAY_AS: Record<ObjectKind, Partial<Record<ObjectRole, D
 };
 
 export const REVERSE_EDGE: Record<EdgeType, ReverseEdgeType> = {
+  requires: "required_by",
   uses: "used_by",
   proves: "proved_by",
   blocks: "blocked_by",
@@ -96,4 +97,3 @@ export const STATUS_COLORS: Record<ObjectStatus, string> = {
   obsolete: "#B0ADA4",
   archived: "#B0ADA4"
 };
-

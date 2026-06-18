@@ -8,11 +8,13 @@ title: Backward semi-discrete stochastic adjoint system
 status: checked
 body:
   - body.md
-summary: The finite-dimensional backward stochastic equation used in the observability and duality arguments.
+summary: >-
+  The finite-dimensional backward stochastic equation used in the observability and duality
+  arguments.
 edges:
-  uses:
-    - main.setting.probability_and_spaces
-    - main.setting.spectral_spaces
-    - main.setting.grid_operator
+  requires:
+    - target: main.setting.probability_and_spaces
+    - target: main.setting.spectral_spaces
+    - target: main.setting.grid_operator
   cites:
-    - source.lue_zhang_2021
+    - target: source.lue_zhang_2021

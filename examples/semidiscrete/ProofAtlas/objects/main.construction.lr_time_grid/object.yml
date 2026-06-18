@@ -10,5 +10,5 @@ body:
   - body.md
 summary: The summable sequence of controlled and free intervals used in the main iteration.
 edges:
-  uses:
-    - main.setting.spectral_spaces
+  requires:
+    - target: main.setting.spectral_spaces

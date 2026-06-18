@@ -11,6 +11,7 @@ import {
 } from "./constants";
 import {
   EDGE_TYPES,
+  EDGE_STRENGTHS,
   DISPLAY_AS,
   IMPORTANCE,
   KINDS,
@@ -23,18 +24,27 @@ import {
 import type {
   AtlasConfig,
   AtlasProblem,
+  AtlasRouteView,
   AtlasView,
+  AtlasWorkspaceConfig,
   BodyFile,
+  EdgeRef,
   EdgeMap,
   EdgeType,
   IssuePriority,
   NormalizedGraph,
   NormalizedObject,
+  NormalizedWorkspace,
   ObjectKind,
   ObjectRole,
   RawObjectRecord,
+  RepresentationMode,
+  ResolvedAtlasProject,
+  RouteProfile,
+  RouteView,
   ViewItem
 } from "./types";
+import { addUniqueEdge, edgeTargets, hardEdgeTargets } from "./edgeUtils";
 import {
   findForbiddenTexMacros,
   parseInvalidEmbedOptionSpacing,
@@ -42,7 +52,7 @@ import {
 } from "./markdownRefs";
 import { pathExists, relativePosix, isPlainObject, listFilesRecursive, toPosixPath } from "./pathUtils";
 import { problem, resetProblemCounter } from "./problems";
-import { resolveProjectRoot } from "./project";
+import { expandHome, resolveAtlasProject } from "./project";
 import { renderMarkdownBlock, splitMarkdownBlocks } from "./render";
 import { readYamlFile } from "./yaml";
 
@@ -69,16 +79,130 @@ function normalizeDefaultView(value: unknown): string {
   return typeof value === "string" && value.trim() ? toPosixPath(value.trim()) : "views/dashboard.md";
 }
 
-async function loadConfig(root: string, problems: AtlasProblem[]): Promise<AtlasConfig> {
-  const configPath = path.join(root, "atlas.yml");
-  const raw = await readYamlFile<Record<string, unknown>>(configPath);
-  const fallbackProject = path.basename(path.dirname(root)) || "proof-atlas";
+function normalizeWorkspace(raw: unknown, problems: AtlasProblem[], sourcePath: string): AtlasWorkspaceConfig | undefined {
+  if (raw === undefined) return undefined;
+  if (!isPlainObject(raw)) {
+    problems.push(problem({
+      severity: "error",
+      code: "invalid_workspace",
+      message: "workspace must be a YAML mapping.",
+      path: sourcePath,
+      strict: true
+    }));
+    return undefined;
+  }
+  const workspace: AtlasWorkspaceConfig = {};
+  if (raw.root !== undefined) {
+    if (typeof raw.root === "string" && raw.root.trim()) {
+      workspace.root = raw.root;
+    } else {
+      problems.push(problem({
+        severity: "error",
+        code: "invalid_workspace_root",
+        message: "workspace.root must be a non-empty string.",
+        path: sourcePath,
+        strict: true
+      }));
+    }
+  }
+  if (raw.tex_main !== undefined) {
+    if (typeof raw.tex_main === "string" && raw.tex_main.trim()) {
+      workspace.tex_main = raw.tex_main;
+    } else {
+      problems.push(problem({
+        severity: "error",
+        code: "invalid_workspace_tex_main",
+        message: "workspace.tex_main must be a non-empty string.",
+        path: sourcePath,
+        strict: true
+      }));
+    }
+  }
+  if (raw.bib !== undefined) {
+    const rawBib = raw.bib;
+    const bib = asStringArray(rawBib);
+    if (Array.isArray(rawBib) && bib && bib.length === rawBib.length) {
+      workspace.bib = bib;
+    } else {
+      problems.push(problem({
+        severity: "error",
+        code: "invalid_workspace_bib",
+        message: "workspace.bib must be a list of strings.",
+        path: sourcePath,
+        strict: true
+      }));
+    }
+  }
+  return Object.keys(workspace).length ? workspace : undefined;
+}
+
+function mergeLocalConfig(config: AtlasConfig, raw: unknown, problems: AtlasProblem[]): AtlasConfig {
+  if (!isPlainObject(raw)) {
+    problems.push(problem({
+      severity: "error",
+      code: "invalid_local_yml",
+      message: ".atlas/local.yml must be a YAML mapping.",
+      path: ".atlas/local.yml",
+      strict: true
+    }));
+    return config;
+  }
+  const allowed = new Set(["workspace"]);
+  for (const key of Object.keys(raw)) {
+    if (allowed.has(key)) continue;
+    problems.push(problem({
+      severity: "error",
+      code: "invalid_local_override",
+      message: `.atlas/local.yml may not override ${key}; only workspace path fields are local.`,
+      path: ".atlas/local.yml",
+      strict: true
+    }));
+  }
+  const localWorkspace = normalizeWorkspace(raw.workspace, problems, ".atlas/local.yml");
+  if (!localWorkspace) return config;
+  return {
+    ...config,
+    workspace: {
+      ...(config.workspace ?? {}),
+      ...localWorkspace
+    }
+  };
+}
+
+function resolvePathFromAtlas(atlasRoot: string, value: string): string {
+  const expanded = expandHome(value);
+  return path.isAbsolute(expanded) ? path.normalize(expanded) : path.resolve(atlasRoot, expanded);
+}
+
+function resolveWorkspaceFile(atlasRoot: string, workspaceRoot: string | null, value: string): string {
+  const expanded = expandHome(value);
+  if (path.isAbsolute(expanded)) return path.normalize(expanded);
+  if (workspaceRoot && !expanded.startsWith("../") && !expanded.startsWith("./")) {
+    return path.resolve(workspaceRoot, expanded);
+  }
+  return path.resolve(atlasRoot, expanded);
+}
+
+function normalizeWorkspacePaths(project: ResolvedAtlasProject, config: AtlasConfig): NormalizedWorkspace {
+  const root = config.workspace?.root
+    ? resolvePathFromAtlas(project.atlasRoot, config.workspace.root)
+    : project.workspaceRoot;
+  return {
+    root,
+    texMain: config.workspace?.tex_main ? resolveWorkspaceFile(project.atlasRoot, root, config.workspace.tex_main) : null,
+    bib: (config.workspace?.bib ?? []).map((item) => resolveWorkspaceFile(project.atlasRoot, root, item))
+  };
+}
+
+async function loadConfig(project: ResolvedAtlasProject, problems: AtlasProblem[]): Promise<AtlasConfig> {
+  const raw = await readYamlFile<Record<string, unknown>>(project.configPath);
+  const fallbackProject = path.basename(path.dirname(project.atlasRoot)) || "proof-atlas";
   const config: AtlasConfig = {
     schema_version: "0.1",
     project: typeof raw?.project === "string" ? raw.project : fallbackProject,
     title: typeof raw?.title === "string" ? raw.title : fallbackProject,
     default_view: normalizeDefaultView(raw?.default_view),
-    math_renderer: "katex"
+    math_renderer: raw?.math_renderer === "mathjax" ? "mathjax" : "katex"
   };
 
   if (!isPlainObject(raw)) {
@@ -111,16 +235,20 @@ async function loadConfig(root: string, problems: AtlasProblem[]): Promise<Atlas
       strict: true
     }));
   }
-  if (raw.math_renderer && raw.math_renderer !== "katex") {
+  const workspace = normalizeWorkspace(raw.workspace, problems, "atlas.yml");
+  if (workspace) config.workspace = workspace;
+
+  if (raw.math_renderer && !["katex", "mathjax"].includes(String(raw.math_renderer))) {
     problems.push(problem({
       severity: "error",
       code: "invalid_math_renderer",
-      message: `math_renderer must be katex in v0.1.`,
+      message: `math_renderer must be katex or mathjax.`,
       path: "atlas.yml",
       strict: true
     }));
   }
-  return config;
+  if (!project.localConfigPath) return config;
+  return mergeLocalConfig(config, await readYamlFile<Record<string, unknown>>(project.localConfigPath), problems);
 }
 
 async function loadRawObjects(root: string): Promise<Array<{ file: string; data: RawObjectRecord }>> {
@@ -176,11 +304,11 @@ function normalizeEdges(
       }));
       continue;
     }
-    if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    if (!Array.isArray(value)) {
       problems.push(problem({
         severity: "error",
         code: "invalid_edge_targets",
-        message: `edges.${edgeKey} must be a list of object names.`,
+        message: `edges.${edgeKey} must be a list of edge references.`,
         path: objectPath,
         objectName,
         objectUid,
@@ -188,7 +316,69 @@ function normalizeEdges(
       }));
       continue;
     }
-    edges[edgeKey] = [...new Set(value as string[])];
+    const refs: EdgeRef[] = [];
+    for (const item of value) {
+      if (!isPlainObject(item)) {
+        problems.push(problem({
+          severity: "error",
+          code: "invalid_edge_ref",
+          message: `edges.${edgeKey} entries must be mappings with target, strength, and reason fields.`,
+          path: objectPath,
+          objectName,
+          objectUid,
+          strict: true
+        }));
+        continue;
+      }
+      if (typeof item.target !== "string" || !item.target.trim()) {
+        problems.push(problem({
+          severity: "error",
+          code: "invalid_edge_ref_target",
+          message: `edges.${edgeKey} entry is missing a non-empty target.`,
+          path: objectPath,
+          objectName,
+          objectUid,
+          strict: true
+        }));
+        continue;
+      }
+      const strength = item.strength === undefined ? "hard" : item.strength;
+      if (!includesReadonly(EDGE_STRENGTHS, strength)) {
+        problems.push(problem({
+          severity: "error",
+          code: "invalid_edge_ref_strength",
+          message: `edges.${edgeKey} strength must be hard or soft.`,
+          path: objectPath,
+          objectName,
+          objectUid,
+          target: item.target,
+          strict: true
+        }));
+        continue;
+      }
+      if (item.reason !== undefined && typeof item.reason !== "string") {
+        problems.push(problem({
+          severity: "error",
+          code: "invalid_edge_ref_reason",
+          message: `edges.${edgeKey} reason must be a string when present.`,
+          path: objectPath,
+          objectName,
+          objectUid,
+          target: item.target,
+          strict: true
+        }));
+        continue;
+      }
+      const ref: EdgeRef = {
+        target: item.target.trim(),
+        strength,
+        ...(typeof item.reason === "string" && item.reason.trim() ? { reason: item.reason } : {})
+      };
+      if (!refs.some((existing) => existing.target === ref.target && existing.strength === ref.strength && existing.reason === ref.reason)) {
+        refs.push(ref);
+      }
+    }
+    if (refs.length) edges[edgeKey] = refs;
   }
   return edges;
 }
@@ -505,36 +695,36 @@ function resolveObject(graph: NormalizedGraph, target: string): NormalizedObject
 function validateAndResolveEdges(graph: NormalizedGraph): void {
   for (const object of graph.objects) {
     const resolvedEdges: EdgeMap = {};
-    for (const [edgeType, targets] of Object.entries(object.edges) as Array<[EdgeType, string[]]>) {
-      for (const target of targets) {
-        const resolved = resolveObject(graph, target);
+    for (const [edgeType, refs] of Object.entries(object.edges) as Array<[EdgeType, EdgeRef[]]>) {
+      for (const ref of refs) {
+        const resolved = resolveObject(graph, ref.target);
         if (!resolved) {
           graph.problems.push(problem({
             severity: "error",
             code: "missing_edge_target",
-            message: `${object.name} has ${edgeType} edge to missing object ${target}.`,
+            message: `${object.name} has ${edgeType} edge to missing object ${ref.target}.`,
             path: object.objectPath,
             objectUid: object.uid,
             objectName: object.name,
-            target,
+            target: ref.target,
             strict: true
           }));
-          addUnique(resolvedEdges, edgeType, target);
+          addUniqueEdge(resolvedEdges, edgeType, ref);
           continue;
         }
-        if (graph.aliases[target]) {
+        if (graph.aliases[ref.target]) {
           graph.problems.push(problem({
             severity: "warning",
             code: "alias_reference",
-            message: `${object.name} references old alias ${target}; prefer ${resolved.name}.`,
+            message: `${object.name} references old alias ${ref.target}; prefer ${resolved.name}.`,
             path: object.objectPath,
             objectUid: object.uid,
             objectName: object.name,
-            target,
+            target: ref.target,
             strict: false
           }));
         }
-        addUnique(resolvedEdges, edgeType, resolved.name);
+        addUniqueEdge(resolvedEdges, edgeType, { ...ref, target: resolved.name });
       }
     }
     object.edges = resolvedEdges;
@@ -544,14 +734,15 @@ function validateAndResolveEdges(graph: NormalizedGraph): void {
 function deriveReverseEdges(graph: NormalizedGraph): void {
   for (const object of graph.objects) object.reverseEdges = {};
   for (const object of graph.objects) {
-    for (const [edgeType, targets] of Object.entries(object.edges) as Array<[EdgeType, string[]]>) {
-      for (const targetName of targets) {
+    for (const [edgeType, refs] of Object.entries(object.edges) as Array<[EdgeType, EdgeRef[]]>) {
+      for (const ref of refs) {
+        const targetName = ref.target;
         const target = graph.objectsByName[targetName];
         if (!target) continue;
         if (edgeType === "related_to") {
           addUnique(object.reverseEdges, "related_to", target.name);
           addUnique(target.reverseEdges, "related_to", object.name);
-          addUnique(target.edges, "related_to", object.name);
+          addUniqueEdge(target.edges, "related_to", { ...ref, target: object.name });
         } else {
           addUnique(target.reverseEdges, REVERSE_EDGE[edgeType], object.name);
         }
@@ -772,6 +963,326 @@ function parseViewItems(graph: NormalizedGraph, source: string, viewPath: string
   return items;
 }
 
+const ROUTE_PROFILES: RouteProfile[] = ["meaning", "proof", "audit", "history"];
+const REPRESENTATION_MODES: RepresentationMode[] = ["full", "statement", "summary", "reference", "omit"];
+
+function normalizeRouteRender(raw: unknown, graph: NormalizedGraph, viewPath: string): RouteView["render"] {
+  if (!isPlainObject(raw)) return {};
+  const render: RouteView["render"] = {};
+  if (raw.order === "prerequisites_first") render.order = raw.order;
+  if (typeof raw.show_graph === "boolean") render.show_graph = raw.show_graph;
+  if (typeof raw.show_status === "boolean") render.show_status = raw.show_status;
+  if (raw.order_hints !== undefined && (!Array.isArray(raw.order_hints) || raw.order_hints.some((item) => typeof item !== "string"))) {
+    graph.problems.push(problem({
+      severity: "error",
+      code: "invalid_route_order_hints",
+      message: "render.order_hints must be a list of object names.",
+      path: viewPath,
+      viewPath,
+      strict: true
+    }));
+  }
+  if (Array.isArray(raw.order_hints)) {
+    const orderHints: string[] = [];
+    for (const item of raw.order_hints) {
+      if (typeof item !== "string") continue;
+      const object = resolveObject(graph, item);
+      if (!object) {
+        graph.problems.push(problem({
+          severity: "error",
+          code: "missing_route_order_hint",
+          message: `render.order_hints entry ${item} does not exist.`,
+          path: viewPath,
+          viewPath,
+          target: item,
+          strict: true
+        }));
+        orderHints.push(item);
+      } else {
+        if (graph.aliases[item]) {
+          graph.problems.push(problem({
+            severity: "warning",
+            code: "alias_reference",
+            message: `Route order hint uses old alias ${item}; prefer ${object.name}.`,
+            path: viewPath,
+            viewPath,
+            target: item,
+            strict: false
+          }));
+        }
+        orderHints.push(object.name);
+      }
+    }
+    if (orderHints.length) render.order_hints = [...new Set(orderHints)];
+  }
+  return render;
+}
+
+function normalizeRouteView(raw: unknown, viewPath: string, graph: NormalizedGraph): RouteView | undefined {
+  if (!isPlainObject(raw)) {
+    graph.problems.push(problem({
+      severity: "error",
+      code: "invalid_route_view",
+      message: "route view must be a YAML mapping.",
+      path: viewPath,
+      viewPath,
+      strict: true
+    }));
+    return undefined;
+  }
+
+  const schemaVersion = raw.schema_version === "0.1" ? "0.1" : "0.1";
+  if (raw.schema_version !== "0.1") {
+    graph.problems.push(problem({
+      severity: "error",
+      code: "invalid_route_schema_version",
+      message: `route schema_version must be "0.1".`,
+      path: viewPath,
+      viewPath,
+      strict: true
+    }));
+  }
+  if (raw.type !== "route") {
+    graph.problems.push(problem({
+      severity: "error",
+      code: "invalid_route_type",
+      message: `route type must be "route".`,
+      path: viewPath,
+      viewPath,
+      strict: true
+    }));
+  }
+
+  const uid = typeof raw.uid === "string" && raw.uid.trim() ? raw.uid : `view_${path.basename(viewPath, ".route.yml")}`;
+  if (typeof raw.uid !== "string" || !raw.uid.trim()) {
+    graph.problems.push(problem({
+      severity: "error",
+      code: "missing_route_uid",
+      message: "route uid is required.",
+      path: viewPath,
+      viewPath,
+      strict: true
+    }));
+  }
+  const title = typeof raw.title === "string" && raw.title.trim() ? raw.title : path.basename(viewPath, ".route.yml");
+  if (typeof raw.title !== "string" || !raw.title.trim()) {
+    graph.problems.push(problem({
+      severity: "error",
+      code: "missing_route_title",
+      message: "route title is required.",
+      path: viewPath,
+      viewPath,
+      strict: true
+    }));
+  }
+
+  const rawTarget = typeof raw.target === "string" ? raw.target : "";
+  const resolvedTarget = rawTarget ? resolveObject(graph, rawTarget) : undefined;
+  if (!rawTarget || !resolvedTarget) {
+    graph.problems.push(problem({
+      severity: "error",
+      code: "missing_route_target",
+      message: rawTarget ? `route target ${rawTarget} does not exist.` : "route target is required.",
+      path: viewPath,
+      viewPath,
+      target: rawTarget,
+      strict: true
+    }));
+  } else if (graph.aliases[rawTarget]) {
+    graph.problems.push(problem({
+      severity: "warning",
+      code: "alias_reference",
+      message: `Route target uses old alias ${rawTarget}; prefer ${resolvedTarget.name}.`,
+      path: viewPath,
+      viewPath,
+      target: rawTarget,
+      strict: false
+    }));
+  }
+
+  const profile = ROUTE_PROFILES.includes(raw.profile as RouteProfile) ? raw.profile as RouteProfile : "proof";
+  if (raw.profile !== undefined && !ROUTE_PROFILES.includes(raw.profile as RouteProfile)) {
+    graph.problems.push(problem({
+      severity: "error",
+      code: "invalid_route_profile",
+      message: `route profile must be one of ${ROUTE_PROFILES.join(", ")}.`,
+      path: viewPath,
+      viewPath,
+      strict: true
+    }));
+  }
+
+  const proofChoices: Record<string, string> = {};
+  if (raw.proof_choices !== undefined && !isPlainObject(raw.proof_choices)) {
+    graph.problems.push(problem({
+      severity: "error",
+      code: "invalid_route_proof_choices",
+      message: "proof_choices must be a YAML mapping from claim name to proof name.",
+      path: viewPath,
+      viewPath,
+      strict: true
+    }));
+  }
+  if (isPlainObject(raw.proof_choices)) {
+    for (const [claimName, proofName] of Object.entries(raw.proof_choices)) {
+      if (typeof proofName !== "string") {
+        graph.problems.push(problem({
+          severity: "error",
+          code: "invalid_route_proof_choice",
+          message: `proof choice for ${claimName} must be a proof object name.`,
+          path: viewPath,
+          viewPath,
+          target: claimName,
+          strict: true
+        }));
+        continue;
+      }
+      const claim = resolveObject(graph, claimName);
+      const proofObject = resolveObject(graph, proofName);
+      if (!claim) {
+        graph.problems.push(problem({
+          severity: "error",
+          code: "missing_route_proof_choice_claim",
+          message: `proof_choices key ${claimName} does not exist.`,
+          path: viewPath,
+          viewPath,
+          target: claimName,
+          strict: true
+        }));
+      }
+      if (!proofObject) {
+        graph.problems.push(problem({
+          severity: "error",
+          code: "missing_route_proof_choice_proof",
+          message: `proof choice ${proofName} does not exist.`,
+          path: viewPath,
+          viewPath,
+          target: proofName,
+          strict: true
+        }));
+      }
+      if (claim && proofObject && !edgeTargets(proofObject.edges.proves).includes(claim.name)) {
+        graph.problems.push(problem({
+          severity: "error",
+          code: "invalid_route_proof_choice_shape",
+          message: `${proofObject.name} does not prove ${claim.name}.`,
+          path: viewPath,
+          viewPath,
+          target: proofObject.name,
+          strict: true
+        }));
+      }
+      proofChoices[claim?.name ?? claimName] = proofObject?.name ?? proofName;
+    }
+  }
+
+  const boundaries: string[] = [];
+  if (raw.boundaries !== undefined && (!Array.isArray(raw.boundaries) || raw.boundaries.some((item) => typeof item !== "string"))) {
+    graph.problems.push(problem({
+      severity: "error",
+      code: "invalid_route_boundaries",
+      message: "boundaries must be a list of object names.",
+      path: viewPath,
+      viewPath,
+      strict: true
+    }));
+  }
+  if (Array.isArray(raw.boundaries)) {
+    for (const item of raw.boundaries) {
+      if (typeof item !== "string") continue;
+      const object = resolveObject(graph, item);
+      if (!object) {
+        graph.problems.push(problem({
+          severity: "error",
+          code: "missing_route_boundary",
+          message: `route boundary ${item} does not exist.`,
+          path: viewPath,
+          viewPath,
+          target: item,
+          strict: true
+        }));
+        boundaries.push(item);
+      } else {
+        boundaries.push(object.name);
+      }
+    }
+  }
+
+  const representation: Record<string, RepresentationMode> = {};
+  if (raw.representation !== undefined && !isPlainObject(raw.representation)) {
+    graph.problems.push(problem({
+      severity: "error",
+      code: "invalid_route_representation",
+      message: "representation must be a YAML mapping from object name to mode.",
+      path: viewPath,
+      viewPath,
+      strict: true
+    }));
+  }
+  if (isPlainObject(raw.representation)) {
+    for (const [name, mode] of Object.entries(raw.representation)) {
+      const object = resolveObject(graph, name);
+      if (!object) {
+        graph.problems.push(problem({
+          severity: "error",
+          code: "missing_route_representation_object",
+          message: `representation key ${name} does not exist.`,
+          path: viewPath,
+          viewPath,
+          target: name,
+          strict: true
+        }));
+      }
+      if (!REPRESENTATION_MODES.includes(mode as RepresentationMode)) {
+        graph.problems.push(problem({
+          severity: "error",
+          code: "invalid_route_representation_mode",
+          message: `representation for ${name} must be one of ${REPRESENTATION_MODES.join(", ")}.`,
+          path: viewPath,
+          viewPath,
+          target: name,
+          strict: true
+        }));
+        continue;
+      }
+      representation[object?.name ?? name] = mode as RepresentationMode;
+    }
+  }
+
+  return {
+    schema_version: schemaVersion,
+    uid,
+    type: "route",
+    title,
+    target: resolvedTarget?.name ?? rawTarget,
+    profile,
+    proof_choices: proofChoices,
+    boundaries,
+    representation,
+    render: normalizeRouteRender(raw.render, graph, viewPath)
+  };
+}
+
+async function loadRouteViews(graph: NormalizedGraph): Promise<void> {
+  const viewsDir = path.join(graph.root, "views");
+  const files = await listFilesRecursive(viewsDir, (filePath) => /\.route\.ya?ml$/.test(filePath));
+  graph.routeViews = [];
+  for (const file of files) {
+    const rawText = await fs.readFile(file, "utf8");
+    const viewPath = relativePosix(graph.root, file);
+    const raw = await readYamlFile<unknown>(file);
+    const route = normalizeRouteView(raw, viewPath, graph);
+    if (!route) continue;
+    graph.routeViews.push({
+      path: viewPath,
+      name: path.basename(file).replace(/\.route\.ya?ml$/, ""),
+      title: route.title,
+      raw: rawText,
+      route
+    });
+  }
+}
+
 async function loadViews(graph: NormalizedGraph): Promise<void> {
   const viewsDir = path.join(graph.root, "views");
   const files = await listFilesRecursive(viewsDir, (filePath) => filePath.endsWith(".md"));
@@ -783,6 +1294,7 @@ async function loadViews(graph: NormalizedGraph): Promise<void> {
     const name = path.basename(file, ".md");
     const items = parseViewItems(graph, raw, viewPath);
     graph.views.push({
+      type: "markdown",
       path: viewPath,
       name,
       title: firstHeading ?? name,
@@ -837,7 +1349,7 @@ function lintGraph(graph: NormalizedGraph): void {
         strict: false
       }));
     }
-    for (const targetName of object.edges.blocks ?? []) {
+    for (const targetName of edgeTargets(object.edges.blocks)) {
       if (object.kind !== "issue") {
         graph.problems.push(problem({
           severity: "warning",
@@ -851,7 +1363,7 @@ function lintGraph(graph: NormalizedGraph): void {
         }));
       }
     }
-    for (const targetName of object.edges.proves ?? []) {
+    for (const targetName of edgeTargets(object.edges.proves)) {
       const target = graph.objectsByName[targetName];
       if (!(object.kind === "math" && ["proof", "proof_fragment"].includes(object.role)) || !(target?.kind === "math" && target.role === "claim")) {
         graph.problems.push(problem({
@@ -866,7 +1378,7 @@ function lintGraph(graph: NormalizedGraph): void {
         }));
       }
     }
-    for (const targetName of object.edges.uses ?? []) {
+    for (const targetName of edgeTargets(object.edges.uses)) {
       const target = graph.objectsByName[targetName];
       if (target && ["proof", "proof_fragment"].includes(target.role)) {
         graph.problems.push(problem({
@@ -880,7 +1392,7 @@ function lintGraph(graph: NormalizedGraph): void {
           strict: false
         }));
       }
-      if (object.role === "claim" && target?.edges.proves?.includes(object.name)) {
+      if (object.role === "claim" && edgeTargets(target?.edges.proves).includes(object.name)) {
         graph.problems.push(problem({
           severity: "warning",
           code: "claim_uses_own_proof",
@@ -892,12 +1404,27 @@ function lintGraph(graph: NormalizedGraph): void {
           strict: false
         }));
       }
+      if (object.role === "claim") {
+        graph.problems.push(problem({
+          severity: "warning",
+          code: "claim_uses_dependency",
+          message: `${object.name} is a claim with a uses edge; statement context should normally use requires and proof dependencies should live on proof objects.`,
+          path: object.objectPath,
+          objectUid: object.uid,
+          objectName: object.name,
+          target: targetName,
+          strict: false
+        }));
+      }
     }
   }
 
   const adjacency = new Map<string, string[]>();
   for (const object of graph.objects) {
-    adjacency.set(object.name, [...(object.edges.uses ?? []), ...(object.edges.proves ?? [])]);
+    adjacency.set(object.name, [
+      ...hardEdgeTargets(object.edges.requires),
+      ...hardEdgeTargets(object.edges.uses)
+    ]);
   }
   const visiting = new Set<string>();
   const visited = new Set<string>();
@@ -910,13 +1437,13 @@ function lintGraph(graph: NormalizedGraph): void {
         cycleWarnings.add(key);
         const object = graph.objectsByName[name];
         graph.problems.push(problem({
-          severity: "warning",
-          code: "dependency_cycle",
-          message: `uses/proves dependency cycle: ${key}.`,
+          severity: "error",
+          code: "hard_dependency_cycle",
+          message: `hard requires/uses dependency cycle: ${key}.`,
           path: object?.objectPath,
           objectUid: object?.uid,
           objectName: object?.name,
-          strict: false
+          strict: true
         }));
       }
       return;
@@ -932,11 +1459,15 @@ function lintGraph(graph: NormalizedGraph): void {
   for (const object of graph.objects) visit(object.name, [object.name]);
 }
 
-export async function buildGraph(projectInput?: string): Promise<NormalizedGraph> {
+export async function buildGraph(projectInput?: string | ResolvedAtlasProject): Promise<NormalizedGraph> {
   resetProblemCounter();
-  const root = await resolveProjectRoot(projectInput);
+  const project = typeof projectInput === "object" && projectInput !== null
+    ? projectInput
+    : await resolveAtlasProject(projectInput);
+  const root = project.atlasRoot;
   const problems: AtlasProblem[] = [];
-  const config = await loadConfig(root, problems);
+  const config = await loadConfig(project, problems);
+  const workspace = normalizeWorkspacePaths(project, config);
   const rawObjects = await loadRawObjects(root);
   if (rawObjects.length === 0) {
     problems.push(problem({
@@ -953,12 +1484,18 @@ export async function buildGraph(projectInput?: string): Promise<NormalizedGraph
   const objectsByName = Object.fromEntries(objects.map((object) => [object.name, object]));
   const graph: NormalizedGraph = {
     root,
+    atlasRoot: root,
+    workspaceRoot: workspace.root,
+    configPath: project.configPath,
+    localConfigPath: project.localConfigPath,
+    workspace,
     config,
     objects,
     objectsByUid,
     objectsByName,
     aliases: {},
     views: [],
+    routeViews: [],
     problems,
     builtAt: new Date().toISOString()
   };
@@ -968,6 +1505,7 @@ export async function buildGraph(projectInput?: string): Promise<NormalizedGraph
   deriveReverseEdges(graph);
   await validateBodyContent(graph);
   await loadViews(graph);
+  await loadRouteViews(graph);
   lintGraph(graph);
   graph.problems.sort((a, b) => {
     const severity = a.severity === b.severity ? 0 : a.severity === "error" ? -1 : 1;

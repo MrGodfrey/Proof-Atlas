@@ -10,6 +10,5 @@ body:
   - statement.md
 summary: Subinterval version of the partial null-control cost used to sum the full control.
 edges:
-  uses:
-    - main.claim.partial_null_control
-    - main.construction.lr_time_grid
+  requires:
+    - target: main.construction.lr_time_grid

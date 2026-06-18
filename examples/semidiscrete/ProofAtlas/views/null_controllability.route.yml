@@ -1,0 +1,27 @@
+schema_version: '0.1'
+uid: view_20260618_null_controllability
+type: route
+title: Why null controllability holds
+target: main.claim.null_controllability
+profile: proof
+proof_choices:
+  main.claim.null_controllability: main.proof.lr_iteration
+  main.claim.partial_null_control: main.proof.partial_null_control
+  main.claim.observability: main.proof.observability
+  main.claim.free_decay: main.proof.free_decay
+boundaries:
+  - main.claim.partial_discrete_lr
+representation:
+  main.claim.null_controllability: full
+  main.proof.lr_iteration: full
+  main.claim.partial_null_control: statement
+  main.proof.partial_null_control: full
+  main.claim.observability: statement
+  main.proof.observability: full
+  main.claim.free_decay: statement
+  main.proof.free_decay: full
+  main.claim.partial_discrete_lr: statement
+render:
+  order: prerequisites_first
+  show_graph: true
+  show_status: true

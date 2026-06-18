@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -9,34 +9,58 @@ import {
   Copy,
   FileText,
   Filter,
+  FolderOpen,
   LayoutDashboard,
   Maximize2,
   Menu,
   NotebookText,
+  Play,
+  RefreshCw,
   Search,
   TriangleAlert,
   X
 } from "lucide-react";
 import { ACTIVE_STATUS, STATUS_COLORS } from "../core/constants";
+import { edgeTargets } from "../core/edgeUtils";
+import { linearizeRoute } from "../core/routeLinearizer";
+import { resolveRoute, type ResolvedRouteNode, type RouteDiagnostic } from "../core/routeResolver";
 import type {
+  AtlasRouteView,
   AtlasProblem,
   AtlasView,
   BodyFile,
+  EdgeType,
   NormalizedGraph,
   NormalizedObject,
   ObjectKind,
   ObjectStatus,
+  RegistryProjectListItem,
   ViewEmbedItem,
   ViewItem
 } from "../core/types";
 
 type BodyCache = Record<string, BodyFile[]>;
+type AppState =
+  | { mode: "loading" }
+  | { mode: "launcher"; projects: RegistryProjectListItem[] }
+  | { mode: "project"; graph: NormalizedGraph };
 
 type RouteState =
   | { mode: "view"; viewName: string; focus?: string; side?: string }
+  | { mode: "route"; routeName: string; side?: string }
   | { mode: "object"; objectId: string };
 
 type Toast = { text: string; title: string } | null;
+type CenterScrollMode = "top" | "preserve";
+type RoutePaneTab = "linear" | "graph";
+type LeftNavTab = "views" | "objects";
+type RoutePaneUiState = {
+  tab?: RoutePaneTab;
+  graphQuery?: string;
+  graphScale?: number;
+  graphScrollLeft?: number;
+  graphScrollTop?: number;
+};
 type ResizeDrag = {
   side: "left" | "right";
   startX: number;
@@ -84,6 +108,15 @@ function parseRoute(): RouteState {
       side: params.get("side") ?? undefined
     };
   }
+  if (path.startsWith("/route/")) {
+    const routeName = decodeURIComponent(path.slice("/route/".length)) || "";
+    const params = new URLSearchParams(window.location.search);
+    return {
+      mode: "route",
+      routeName,
+      side: params.get("side") ?? undefined
+    };
+  }
   return { mode: "view", viewName: "dashboard" };
 }
 
@@ -93,6 +126,13 @@ function routeView(view: AtlasView, focus?: string, side?: string): string {
   if (side) params.set("side", side);
   const query = params.toString();
   return `/view/${encodeURIComponent(view.name)}${query ? `?${query}` : ""}`;
+}
+
+function routeGeneratedView(view: AtlasRouteView, side?: string): string {
+  const params = new URLSearchParams();
+  if (side) params.set("side", side);
+  const query = params.toString();
+  return `/route/${encodeURIComponent(view.name)}${query ? `?${query}` : ""}`;
 }
 
 function objectHref(object: NormalizedObject): string {
@@ -139,6 +179,88 @@ function shortName(name: string): string {
   if (parts[0] === "main" && parts.length > 2) return parts.slice(2).join(".");
   if (parts.length > 1) return parts.slice(1).join(".");
   return name;
+}
+
+function truncateLabel(value: string, maxLength: number): string {
+  return value.length <= maxLength ? value : `${value.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function formatTokenCount(value: number): string {
+  if (value >= 1000) return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k`;
+  return String(value);
+}
+
+type RouteGraphPosition = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  depth: number;
+};
+
+const ROUTE_EDGE_TYPES: EdgeType[] = ["requires", "uses", "proves", "blocks", "refines", "replaces", "cites", "related_to"];
+
+function routeEdgeKey(edge: { source: string; type: EdgeType; target: string }): string {
+  return `${edge.source}|${edge.type}|${edge.target}`;
+}
+
+function routeEdgeColor(type: EdgeType): string {
+  if (type === "requires") return "#4c6f93";
+  if (type === "uses") return "#6f7f4e";
+  if (type === "proves") return "#a05a3d";
+  if (type === "blocks") return "#b44242";
+  if (type === "refines" || type === "replaces") return "#7b63b8";
+  if (type === "cites") return "#7a6b58";
+  return "#8a867c";
+}
+
+function routeNodeAccent(node: ResolvedRouteNode, targetName: string): string {
+  if (node.inclusionClass === "open") return "#b44242";
+  if (node.inclusionClass === "boundary") return "#8b6f36";
+  if (node.object.name === targetName) return "#4d62ad";
+  if (node.inclusionClass === "vocabulary") return "#8a867c";
+  if (node.object.kind === "issue") return "#b44242";
+  if (node.object.kind === "note" || node.object.provenance !== "internal") return "#7a6b58";
+  if (node.object.kind === "math" && node.object.role === "claim") return "#3f7f6d";
+  if (node.object.kind === "math" && ["proof", "proof_fragment"].includes(node.object.role)) return "#a05a3d";
+  if (node.object.kind === "math" && ["model", "construction", "calculation"].includes(node.object.role)) return "#4c6f93";
+  return "#6f7f4e";
+}
+
+function routeNodeCategory(node: ResolvedRouteNode, targetName: string): string {
+  if (node.inclusionClass === "open") return "open";
+  if (node.inclusionClass === "boundary") return "boundary";
+  if (node.object.name === targetName) return "target";
+  if (node.inclusionClass === "vocabulary") return "context";
+  if (node.object.kind === "math") return node.object.role.replaceAll("_", " ");
+  return node.object.kind;
+}
+
+function routeGraphEdgePath(source: RouteGraphPosition, target: RouteGraphPosition): string {
+  const sourceCenterX = source.x + source.width / 2;
+  const sourceCenterY = source.y + source.height / 2;
+  const targetCenterX = target.x + target.width / 2;
+  const targetCenterY = target.y + target.height / 2;
+  const sameColumn = Math.abs(sourceCenterX - targetCenterX) < 24;
+
+  if (sameColumn) {
+    const down = targetCenterY >= sourceCenterY;
+    const startX = sourceCenterX;
+    const startY = source.y + (down ? source.height : 0);
+    const endX = targetCenterX;
+    const endY = target.y + (down ? 0 : target.height);
+    const bend = Math.max(42, Math.abs(endY - startY) / 2);
+    const controlY = down ? startY + bend : startY - bend;
+    return `M ${startX} ${startY} C ${startX + 70} ${controlY}, ${endX + 70} ${endY - (down ? bend : -bend)}, ${endX} ${endY}`;
+  }
+
+  const rightward = targetCenterX > sourceCenterX;
+  const startX = source.x + (rightward ? source.width : 0);
+  const endX = target.x + (rightward ? 0 : target.width);
+  const delta = Math.max(60, Math.abs(endX - startX) * 0.46);
+  const control1X = startX + (rightward ? delta : -delta);
+  const control2X = endX - (rightward ? delta : -delta);
+  return `M ${startX} ${sourceCenterY} C ${control1X} ${sourceCenterY}, ${control2X} ${targetCenterY}, ${endX} ${targetCenterY}`;
 }
 
 function relationLabel(key: string): string {
@@ -280,6 +402,32 @@ function getSelectionForReference(): { file: string; block: string; kind: BodyFi
   };
 }
 
+function historyUrl(): string {
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+}
+
+function historyObject(): Record<string, unknown> {
+  return window.history.state && typeof window.history.state === "object"
+    ? window.history.state as Record<string, unknown>
+    : {};
+}
+
+function readRoutePaneUiState(key: string): RoutePaneUiState {
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as RoutePaneUiState;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeRoutePaneUiState(key: string, patch: RoutePaneUiState): void {
+  const next = { ...readRoutePaneUiState(key), ...patch };
+  window.sessionStorage.setItem(key, JSON.stringify(next));
+}
+
 function ColumnResizer(props: {
   side: "left" | "right";
   label: string;
@@ -297,7 +445,7 @@ function ColumnResizer(props: {
 }
 
 export default function App() {
-  const [graph, setGraph] = useState<NormalizedGraph | null>(null);
+  const [appState, setAppState] = useState<AppState>({ mode: "loading" });
   const [route, setRoute] = useState<RouteState>(() => parseRoute());
   const [bodyCache, setBodyCache] = useState<BodyCache>({});
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -310,35 +458,77 @@ export default function App() {
   const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
   const [detailWidth, setDetailWidth] = useState(() => defaultDetailWidth());
   const [resizeDrag, setResizeDrag] = useState<ResizeDrag>(null);
+  const [projectOpen, setProjectOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [buildOpen, setBuildOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
   const [buildFlash, setBuildFlash] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>(null);
   const [overlayUid, setOverlayUid] = useState<string | null>(null);
   const [copiedUid, setCopiedUid] = useState<string | null>(null);
+  const centerPaneRef = useRef<HTMLElement | null>(null);
+  const pendingCenterScroll = useRef<number | null>(null);
+  const scrollWriteFrame = useRef<number | null>(null);
 
-  const refreshGraph = useCallback(async () => {
-    const response = await fetch("/api/graph", { cache: "no-store" });
-    setGraph(await response.json() as NormalizedGraph);
+  const refreshState = useCallback(async () => {
+    const response = await fetch("/api/state", { cache: "no-store" });
+    setAppState(await response.json() as AppState);
   }, []);
 
+  const centerScrollTop = useCallback(() => centerPaneRef.current?.scrollTop ?? 0, []);
+
+  const persistCenterScroll = useCallback((scrollTop = centerScrollTop()) => {
+    window.history.replaceState({
+      ...historyObject(),
+      paCenterScroll: scrollTop
+    }, "", historyUrl());
+  }, [centerScrollTop]);
+
+  const scheduleCenterScrollPersist = useCallback(() => {
+    if (scrollWriteFrame.current !== null) return;
+    scrollWriteFrame.current = window.requestAnimationFrame(() => {
+      scrollWriteFrame.current = null;
+      persistCenterScroll();
+    });
+  }, [persistCenterScroll]);
+
   useEffect(() => {
-    void refreshGraph();
-    const onPop = () => setRoute(parseRoute());
+    if (typeof historyObject().paCenterScroll !== "number") persistCenterScroll(0);
+    return () => {
+      if (scrollWriteFrame.current !== null) window.cancelAnimationFrame(scrollWriteFrame.current);
+    };
+  }, [persistCenterScroll]);
+
+  useEffect(() => {
+    void refreshState();
+    const onPop = (event: PopStateEvent) => {
+      const nextScroll = event.state && typeof event.state.paCenterScroll === "number"
+        ? event.state.paCenterScroll
+        : 0;
+      pendingCenterScroll.current = nextScroll;
+      setRoute(parseRoute());
+    };
     window.addEventListener("popstate", onPop);
     const events = new EventSource("/api/events");
     events.addEventListener("build", (event) => {
       const data = JSON.parse((event as MessageEvent).data) as { type: string; problemCount?: number };
-      setBuildFlash(data.type === "rebuilt" ? `Rebuilt · ${data.problemCount ?? 0} problems` : "Rebuild failed");
+      setBuildFlash(data.type === "rebuilt" || data.type === "project_opened" ? `Rebuilt · ${data.problemCount ?? 0} problems` : "Rebuild failed");
       setTimeout(() => setBuildFlash(null), 1800);
       setBodyCache({});
-      void refreshGraph();
+      void refreshState();
     });
     return () => {
       window.removeEventListener("popstate", onPop);
       events.close();
     };
-  }, [refreshGraph]);
+  }, [refreshState]);
+
+  useLayoutEffect(() => {
+    if (pendingCenterScroll.current === null) return;
+    const nextScroll = pendingCenterScroll.current;
+    pendingCenterScroll.current = null;
+    if (centerPaneRef.current) centerPaneRef.current.scrollTop = nextScroll;
+  }, [route, appState.mode]);
 
   useEffect(() => {
     const scrollTimers = new Map<Element, number>();
@@ -389,8 +579,26 @@ export default function App() {
     };
   }, [resizeDrag]);
 
+  const graph = appState.mode === "project" ? appState.graph : null;
   const objectsByUid = graph?.objectsByUid ?? {};
   const objectsByName = graph?.objectsByName ?? {};
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        if (!graph) return;
+        event.preventDefault();
+        setCommandOpen(true);
+        setProjectOpen(false);
+        setFilterOpen(false);
+        setBuildOpen(false);
+        return;
+      }
+      if (event.key === "Escape") setCommandOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [graph]);
 
   const currentView = useMemo(() => {
     if (!graph) return undefined;
@@ -400,7 +608,13 @@ export default function App() {
       ?? graph.views[0];
   }, [graph, route]);
 
-  const sideObject = route.mode === "view" && route.side
+  const currentRouteView = useMemo(() => {
+    if (!graph || route.mode !== "route") return undefined;
+    return graph.routeViews.find((view) => view.name === route.routeName || titleForPath(view.path) === route.routeName)
+      ?? graph.routeViews[0];
+  }, [graph, route]);
+
+  const sideObject = (route.mode === "view" || route.mode === "route") && route.side
     ? (objectsByUid[route.side] ?? objectsByName[route.side])
     : undefined;
   const fullObject = route.mode === "object"
@@ -409,6 +623,16 @@ export default function App() {
   const overlayObject = overlayUid
     ? (objectsByUid[overlayUid] ?? objectsByName[overlayUid])
     : undefined;
+  const currentResolvedRoute = useMemo(() => {
+    if (!graph || route.mode !== "route" || !currentRouteView) return undefined;
+    return resolveRoute(graph, currentRouteView.route);
+  }, [currentRouteView, graph, route.mode]);
+  const sideRouteNode = currentResolvedRoute && sideObject
+    ? currentResolvedRoute.nodes.find((node) => node.object.uid === sideObject.uid)
+    : undefined;
+  const sideRouteDiagnostics = currentResolvedRoute && sideObject
+    ? currentResolvedRoute.diagnostics.filter((item) => item.objectName === sideObject.name || item.target === sideObject.name)
+    : [];
 
   useEffect(() => {
     if (!graph || !currentView || route.mode !== "view" || route.side || detailDismissed) return;
@@ -421,19 +645,26 @@ export default function App() {
     setRoute(parseRoute());
   }, [currentView, detailDismissed, graph, objectsByName, objectsByUid, route]);
 
-  const navigate = useCallback((url: string) => {
+  const navigate = useCallback((url: string, scrollMode: CenterScrollMode = "top") => {
     setOverlayUid(null);
-    window.history.pushState({}, "", url);
+    persistCenterScroll();
+    const nextScroll = scrollMode === "preserve" ? centerScrollTop() : 0;
+    window.history.pushState({ paCenterScroll: nextScroll }, "", url);
+    pendingCenterScroll.current = nextScroll;
     setRoute(parseRoute());
-  }, []);
+  }, [centerScrollTop, persistCenterScroll]);
 
   const selectObject = useCallback((object: NormalizedObject) => {
-    if (!currentView) return;
     setFilterOpen(false);
     setBuildOpen(false);
     setDetailDismissed(false);
-    navigate(routeView(currentView, object.uid, object.uid));
-  }, [currentView, navigate]);
+    if (route.mode === "route" && currentRouteView) {
+      navigate(routeGeneratedView(currentRouteView, object.uid), "preserve");
+      return;
+    }
+    if (!currentView) return;
+    navigate(routeView(currentView, object.uid, object.uid), "preserve");
+  }, [currentRouteView, currentView, navigate, route.mode]);
 
   const openFull = useCallback((object: NormalizedObject) => {
     setFilterOpen(false);
@@ -448,6 +679,13 @@ export default function App() {
     navigate(routeView(view, object?.uid, object?.uid));
   }, [detailDismissed, graph, navigate]);
 
+  const openRouteView = useCallback((view: AtlasRouteView) => {
+    setFilterOpen(false);
+    setBuildOpen(false);
+    setDetailDismissed(false);
+    navigate(routeGeneratedView(view));
+  }, [navigate]);
+
   const ensureBody = useCallback(async (uid: string) => {
     if (bodyCache[uid]) return;
     const response = await fetch(`/api/object/${encodeURIComponent(uid)}/body`, { cache: "no-store" });
@@ -457,14 +695,22 @@ export default function App() {
   }, [bodyCache]);
 
   const selectObjectKeepingOverlay = useCallback((object: NormalizedObject) => {
-    if (!currentView) return;
     setFilterOpen(false);
     setBuildOpen(false);
     setDetailDismissed(false);
-    window.history.pushState({}, "", routeView(currentView, object.uid, object.uid));
+    if (route.mode === "route" && currentRouteView) {
+      persistCenterScroll();
+      window.history.pushState({}, "", routeGeneratedView(currentRouteView, object.uid));
+    } else if (currentView) {
+      persistCenterScroll();
+      window.history.pushState({}, "", routeView(currentView, object.uid, object.uid));
+    } else {
+      return;
+    }
+    window.history.replaceState({ ...historyObject(), paCenterScroll: centerScrollTop() }, "", historyUrl());
     setRoute(parseRoute());
     void ensureBody(object.uid);
-  }, [currentView, ensureBody]);
+  }, [centerScrollTop, currentRouteView, currentView, ensureBody, persistCenterScroll, route.mode]);
 
   const openOverlay = useCallback((object: NormalizedObject) => {
     setFilterOpen(false);
@@ -475,14 +721,19 @@ export default function App() {
 
   const goHistory = useCallback((delta: -1 | 1) => {
     setOverlayUid(null);
+    persistCenterScroll();
     if (delta < 0) window.history.back();
     else window.history.forward();
-  }, []);
+  }, [persistCenterScroll]);
 
   const closeDetailPanel = useCallback(() => {
     setDetailDismissed(true);
-    if (currentView) navigate(routeView(currentView, route.mode === "view" ? route.focus : undefined));
-  }, [currentView, navigate, route]);
+    if (route.mode === "route" && currentRouteView) {
+      navigate(routeGeneratedView(currentRouteView), "preserve");
+      return;
+    }
+    if (currentView) navigate(routeView(currentView, route.mode === "view" ? route.focus : undefined), "preserve");
+  }, [currentRouteView, currentView, navigate, route]);
 
   const startResize = useCallback((side: "left" | "right", event: ReactMouseEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -508,13 +759,42 @@ export default function App() {
     setTimeout(() => setToast(null), 3600);
   }, []);
 
-  if (!graph) {
+  const openProjectFromLauncher = useCallback(async (input: string): Promise<string | undefined> => {
+    const response = await fetch("/api/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input })
+    });
+    const data = await response.json() as { mode?: "project"; graph?: NormalizedGraph; error?: string };
+    if (!response.ok || !data.graph) return data.error ?? "Unable to open project.";
+    setBodyCache({});
+    setExpanded(new Set());
+    setDetailDismissed(false);
+    setProjectOpen(false);
+    setFilterOpen(false);
+    setBuildOpen(false);
+    setCommandOpen(false);
+    setOverlayUid(null);
+    setAppState({ mode: "project", graph: data.graph });
+    window.history.pushState({}, "", "/");
+    setRoute(parseRoute());
+    return undefined;
+  }, []);
+
+  if (appState.mode === "loading") {
     return <div className="loading">Loading Proof Atlas...</div>;
   }
+
+  if (appState.mode === "launcher") {
+    return <LauncherHome projects={appState.projects} onOpen={openProjectFromLauncher} onRefresh={refreshState} />;
+  }
+
+  if (!graph) return <div className="loading">Loading Proof Atlas...</div>;
 
   const errorCount = graph.problems.filter((item) => item.severity === "error").length;
   const warningCount = graph.problems.filter((item) => item.severity === "warning").length;
   const buildState = errorCount ? "error" : warningCount ? "warning" : "ok";
+  const currentLabel = route.mode === "route" && currentRouteView ? currentRouteView.title : currentView ? viewLabel(currentView) : "View";
   const appShellStyle = {
     "--left-width": `${leftWidth}px`,
     "--detail-width": `${detailWidth}px`
@@ -522,12 +802,12 @@ export default function App() {
 
   return (
     <div
-      className={`app-shell ${leftOpen ? "left-visible" : ""} ${sideObject && route.mode === "view" ? "side-visible" : ""} ${resizeDrag ? "is-resizing" : ""}`}
+      className={`app-shell ${leftOpen ? "left-visible" : ""} ${sideObject && (route.mode === "view" || route.mode === "route") ? "side-visible" : ""} ${resizeDrag ? "is-resizing" : ""}`}
       style={appShellStyle}
     >
       <TopBar
         graph={graph}
-        currentView={currentView}
+        currentLabel={currentLabel}
         leftOpen={leftOpen}
         onToggleLeft={() => setLeftOpen((value) => !value)}
         filterOpen={filterOpen}
@@ -536,6 +816,8 @@ export default function App() {
         setBuildOpen={setBuildOpen}
         buildState={buildState}
         buildFlash={buildFlash}
+        projectOpen={projectOpen}
+        setProjectOpen={setProjectOpen}
         statusFilter={statusFilter}
         setStatusFilter={setStatusFilter}
         kindFilter={kindFilter}
@@ -544,12 +826,13 @@ export default function App() {
           const object = problem.objectUid ? objectsByUid[problem.objectUid] : problem.objectName ? objectsByName[problem.objectName] : undefined;
           if (object) selectObject(object);
         }}
+        onSwitchProject={openProjectFromLauncher}
       />
       <div className="main-row">
         {leftOpen && (
           <LeftNav
             graph={graph}
-            currentView={currentView}
+            currentView={route.mode === "view" ? currentView : undefined}
             treeFilter={treeFilter}
             setTreeFilter={setTreeFilter}
             statusFilter={statusFilter}
@@ -557,6 +840,8 @@ export default function App() {
             showArchived={showArchived}
             setShowArchived={setShowArchived}
             onView={openView}
+            currentRouteView={currentRouteView}
+            onRouteView={openRouteView}
             onOpenFull={openFull}
             selectedUid={sideObject?.uid ?? fullObject?.uid}
             width={leftWidth}
@@ -565,7 +850,7 @@ export default function App() {
         {leftOpen && (
           <ColumnResizer side="left" label="Resize navigation column" onMouseDown={(event) => startResize("left", event)} />
         )}
-        <main className="center-pane">
+        <main className="center-pane" ref={centerPaneRef} onScroll={scheduleCenterScrollPersist}>
           {errorCount > 0 && (
             <div className="build-error-bar">
               {errorCount} build error{errorCount === 1 ? "" : "s"} found. The last readable graph is still shown.
@@ -585,6 +870,14 @@ export default function App() {
               onCopy={copyReference}
               copied={copiedUid === fullObject.uid}
               onOpenPreview={openOverlay}
+            />
+          ) : route.mode === "route" && currentRouteView ? (
+            <GeneratedRoutePane
+              graph={graph}
+              routeView={currentRouteView}
+              selectedUid={sideObject?.uid}
+              onSelect={selectObject}
+              onOpenFull={openFull}
             />
           ) : currentView ? (
             <ViewPane
@@ -608,10 +901,10 @@ export default function App() {
             <div className="empty-state">No view found.</div>
           )}
         </main>
-        {sideObject && route.mode === "view" && (
+        {sideObject && (route.mode === "view" || route.mode === "route") && (
           <ColumnResizer side="right" label="Resize detail column" onMouseDown={(event) => startResize("right", event)} />
         )}
-        {sideObject && route.mode === "view" && (
+        {sideObject && (route.mode === "view" || route.mode === "route") && (
           <DetailPanel
             graph={graph}
             object={sideObject}
@@ -626,6 +919,8 @@ export default function App() {
             body={bodyCache[sideObject.uid]}
             ensureBody={ensureBody}
             width={detailWidth}
+            routeNode={sideRouteNode}
+            routeDiagnostics={sideRouteDiagnostics}
           />
         )}
       </div>
@@ -646,14 +941,184 @@ export default function App() {
           copied={copiedUid === overlayObject.uid}
         />
       )}
+      {commandOpen && (
+        <CommandPalette
+          graph={graph}
+          currentView={currentView}
+          currentRouteView={currentRouteView}
+          selectedUid={sideObject?.uid ?? fullObject?.uid}
+          onClose={() => setCommandOpen(false)}
+          onView={(view) => {
+            setCommandOpen(false);
+            openView(view);
+          }}
+          onRouteView={(view) => {
+            setCommandOpen(false);
+            openRouteView(view);
+          }}
+          onOpenFull={(object) => {
+            setCommandOpen(false);
+            openFull(object);
+          }}
+        />
+      )}
       {toast && <Toast toast={toast} />}
+    </div>
+  );
+}
+
+function LauncherHome(props: {
+  projects: RegistryProjectListItem[];
+  onOpen: (input: string) => Promise<string | undefined>;
+  onRefresh: () => Promise<void>;
+}) {
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const open = async (value: string) => {
+    const target = value.trim();
+    if (!target) return;
+    setBusy(target);
+    setError(null);
+    const nextError = await props.onOpen(target);
+    if (nextError) setError(nextError);
+    setBusy(null);
+  };
+  return (
+    <main className="launcher-shell">
+      <section className="launcher-panel">
+        <div className="launcher-heading">
+          <div>
+            <div className="view-kicker">Proof Atlas</div>
+            <h1>Open a project</h1>
+          </div>
+          <button className="icon-button" title="Refresh recent projects" onClick={() => void props.onRefresh()}>
+            <RefreshCw size={16} />
+          </button>
+        </div>
+        <form className="launcher-open-row" onSubmit={(event) => {
+          event.preventDefault();
+          void open(input);
+        }}>
+          <FolderOpen size={16} />
+          <input
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            placeholder="/path/to/paper or /path/to/ProofAtlas"
+          />
+          <button className="toolbar-button" type="submit" disabled={!input.trim() || Boolean(busy)}>
+            <Play size={13} /> Open
+          </button>
+        </form>
+        {error && <div className="launcher-error">{error}</div>}
+        <div className="launcher-label">Recent projects</div>
+        <div className="launcher-projects">
+          {props.projects.length === 0 ? (
+            <div className="empty-state">No registered projects.</div>
+          ) : props.projects.map((project) => (
+            <button
+              key={`${project.id}-${project.atlas_root}`}
+              className={`launcher-project ${project.missing ? "missing" : ""}`}
+              onClick={() => void open(project.id)}
+            >
+              <span className="launcher-project-title">{project.title}</span>
+              <code>{project.id}</code>
+              <small>{project.missing ? "missing" : project.atlas_root}</small>
+              <em>{project.last_opened}</em>
+            </button>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function ProjectSwitcher(props: {
+  open: boolean;
+  setOpen: (value: boolean) => void;
+  onSwitchProject: (input: string) => Promise<string | undefined>;
+  onBeforeOpen: () => void;
+}) {
+  const [input, setInput] = useState("");
+  const [projects, setProjects] = useState<RegistryProjectListItem[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshProjects = useCallback(async () => {
+    const response = await fetch("/api/projects", { cache: "no-store" });
+    const data = await response.json() as { projects: RegistryProjectListItem[] };
+    setProjects(data.projects ?? []);
+  }, []);
+
+  useEffect(() => {
+    if (props.open) void refreshProjects();
+  }, [props.open, refreshProjects]);
+
+  const switchProject = async (value: string) => {
+    const target = value.trim();
+    if (!target) return;
+    setBusy(true);
+    setError(null);
+    const nextError = await props.onSwitchProject(target);
+    if (nextError) {
+      setError(nextError);
+      setBusy(false);
+      return;
+    }
+    setInput("");
+    setBusy(false);
+  };
+
+  return (
+    <div className="top-popover-anchor">
+      <button className={`toolbar-button ${props.open ? "active" : ""}`} onClick={() => {
+        const next = !props.open;
+        if (next) props.onBeforeOpen();
+        props.setOpen(next);
+      }}>
+        <FolderOpen size={13} /> Open
+      </button>
+      {props.open && (
+        <div className="dropdown project-panel">
+          <form className="project-open-form" onSubmit={(event) => {
+            event.preventDefault();
+            void switchProject(input);
+          }}>
+            <input
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder="/path/to/paper, ProofAtlas/, or project-id"
+            />
+            <button className="toolbar-button" type="submit" disabled={!input.trim() || busy}>
+              <Play size={12} /> Open
+            </button>
+          </form>
+          {error && <div className="project-open-error">{error}</div>}
+          <div className="dropdown-label">Recent projects</div>
+          <div className="project-menu-list">
+            {projects.length === 0 ? (
+              <div className="muted">No registered projects.</div>
+            ) : projects.map((project) => (
+              <button
+                key={`${project.id}-${project.atlas_root}`}
+                className={`project-menu-row ${project.missing ? "missing" : ""}`}
+                onClick={() => void switchProject(project.id)}
+              >
+                <span>{project.title}</span>
+                <code>{project.id}</code>
+                <small>{project.missing ? "missing" : project.atlas_root}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function TopBar(props: {
   graph: NormalizedGraph;
-  currentView?: AtlasView;
+  currentLabel: string;
   leftOpen: boolean;
   onToggleLeft: () => void;
   filterOpen: boolean;
@@ -662,11 +1127,14 @@ function TopBar(props: {
   setBuildOpen: (value: boolean) => void;
   buildState: "ok" | "warning" | "error";
   buildFlash: string | null;
+  projectOpen: boolean;
+  setProjectOpen: (value: boolean) => void;
   statusFilter: Set<ObjectStatus>;
   setStatusFilter: (value: Set<ObjectStatus>) => void;
   kindFilter: Set<ObjectKind>;
   setKindFilter: (value: Set<ObjectKind>) => void;
   onProblemClick: (problem: AtlasProblem) => void;
+  onSwitchProject: (input: string) => Promise<string | undefined>;
 }) {
   const buildColor = props.buildState === "ok" ? "#2E7D32" : props.buildState === "warning" ? "#B8860B" : "#C62828";
   const buildLabel = props.buildState === "ok" ? "Build OK" : props.buildState === "warning" ? `${props.graph.problems.length} problem(s)` : "Build error";
@@ -685,13 +1153,23 @@ function TopBar(props: {
       <button className="icon-button" title="Toggle navigation" onClick={props.onToggleLeft}><Menu size={16} /></button>
       <span className="project-name">{props.graph.config.title}</span>
       <span className="top-slash">/</span>
-      <span className="current-view">{viewLabel(props.currentView)}</span>
+      <span className="current-view">{props.currentLabel}</span>
       <div className="top-spacer" />
       {props.buildFlash && <span className="build-flash">{props.buildFlash}</span>}
+      <ProjectSwitcher
+        open={props.projectOpen}
+        setOpen={props.setProjectOpen}
+        onSwitchProject={props.onSwitchProject}
+        onBeforeOpen={() => {
+          props.setFilterOpen(false);
+          props.setBuildOpen(false);
+        }}
+      />
       <div className="top-popover-anchor">
         <button className={`toolbar-button ${props.filterOpen ? "active" : ""}`} onClick={() => {
           props.setFilterOpen(!props.filterOpen);
           props.setBuildOpen(false);
+          props.setProjectOpen(false);
         }}>
           <Filter size={13} /> Filter
         </button>
@@ -719,6 +1197,7 @@ function TopBar(props: {
         <button className="toolbar-button" onClick={() => {
           props.setBuildOpen(!props.buildOpen);
           props.setFilterOpen(false);
+          props.setProjectOpen(false);
         }}>
           <span className="build-dot" style={{ background: buildColor, boxShadow: `0 0 0 3px ${buildColor}2a` }} />
           {buildLabel}
@@ -745,6 +1224,7 @@ function TopBar(props: {
 function LeftNav(props: {
   graph: NormalizedGraph;
   currentView?: AtlasView;
+  currentRouteView?: AtlasRouteView;
   treeFilter: string;
   setTreeFilter: (value: string) => void;
   statusFilter: Set<ObjectStatus>;
@@ -752,10 +1232,28 @@ function LeftNav(props: {
   showArchived: boolean;
   setShowArchived: (value: boolean) => void;
   onView: (view: AtlasView) => void;
+  onRouteView: (view: AtlasRouteView) => void;
   onOpenFull: (object: NormalizedObject) => void;
   selectedUid?: string;
   width: number;
 }) {
+  const [activeTab, setActiveTab] = useState<LeftNavTab>("views");
+  const manualViews = useMemo(() => {
+    return [...props.graph.views].sort((a, b) => viewSortKey(props.graph, a).localeCompare(viewSortKey(props.graph, b)));
+  }, [props.graph]);
+  const generatedViews = useMemo(() => {
+    return [...props.graph.routeViews].sort((a, b) => a.title.localeCompare(b.title));
+  }, [props.graph.routeViews]);
+  const routeSummaries = useMemo(() => {
+    return new Map(generatedViews.map((view) => {
+      const route = resolveRoute(props.graph, view.route);
+      return [view.path, {
+        target: shortName(route.target.name),
+        objects: route.nodes.length,
+        tokens: formatTokenCount(route.totalTokens)
+      }];
+    }));
+  }, [generatedViews, props.graph]);
   const grouped = useMemo(() => {
     const filter = props.treeFilter.toLowerCase();
     const groups = new Map<string, NormalizedObject[]>();
@@ -771,48 +1269,223 @@ function LeftNav(props: {
     }));
   }, [props.graph.objects, props.kindFilter, props.showArchived, props.statusFilter, props.treeFilter]);
   const archivedCount = props.graph.objects.filter((object) => ["disproved", "obsolete", "archived"].includes(object.status)).length;
+  const viewCount = manualViews.length + generatedViews.length;
   return (
     <aside className="left-nav" style={{ width: props.width, flexBasis: props.width }}>
-      <section className="nav-section">
-        <div className="nav-label">Views</div>
-        {[...props.graph.views].sort((a, b) => viewSortKey(props.graph, a).localeCompare(viewSortKey(props.graph, b))).map((view) => (
-          <button
-            key={view.path}
-            className={`view-button ${props.currentView?.path === view.path ? "active" : ""}`}
-            onClick={() => props.onView(view)}
-          >
-            {viewIcon(view)}
-            {viewLabel(view)}
-          </button>
-        ))}
-      </section>
-      <section className="filter-input-wrap">
-        <Search size={14} />
-        <input value={props.treeFilter} onChange={(event) => props.setTreeFilter(event.target.value)} placeholder="Filter objects..." />
-      </section>
-      <section className="tree-section">
-        {grouped.map((group) => (
-          <div className="tree-group" key={group.group}>
-            <div className="tree-group-label">{group.group}</div>
-            {group.objects.map((object) => (
+      <div className="left-nav-tabs" role="tablist" aria-label="Navigation mode">
+        <button className={activeTab === "views" ? "active" : ""} onClick={() => setActiveTab("views")}>
+          <span>Views</span><code>{viewCount}</code>
+        </button>
+        <button className={activeTab === "objects" ? "active" : ""} onClick={() => setActiveTab("objects")}>
+          <span>Objects</span><code>{props.graph.objects.length}</code>
+        </button>
+      </div>
+      {activeTab === "views" ? (
+        <section className="views-tab-panel">
+          <div className="nav-section">
+            <div className="nav-label">Manual</div>
+            {manualViews.map((view) => (
               <button
-                key={object.uid}
-                className={`tree-item ${props.selectedUid === object.uid ? "selected" : ""} ${["disproved", "obsolete", "archived"].includes(object.status) ? "faded" : ""}`}
-                onClick={() => props.onOpenFull(object)}
-                title="Open full page"
+                key={view.path}
+                className={`view-button ${props.currentView?.path === view.path ? "active" : ""}`}
+                onClick={() => props.onView(view)}
               >
-                <span className="status-dot" style={{ background: statusColor(object.status) }} />
-                <span className="kind-mini">{kindIcon(object.kind, 12)}</span>
-                <span className="tree-short">{shortName(object.name)}</span>
+                {viewIcon(view)}
+                <span>{viewLabel(view)}</span>
+                {view.path === props.graph.config.default_view && <span className="view-kind-badge">default</span>}
               </button>
             ))}
           </div>
-        ))}
-      </section>
-      <button className="archived-toggle" onClick={() => props.setShowArchived(!props.showArchived)}>
-        {props.showArchived ? "Hide" : "Show"} archived & obsolete ({archivedCount})
-      </button>
+          <div className="nav-section generated-view-section">
+            <div className="nav-label">Generated</div>
+            {generatedViews.length === 0 ? (
+              <div className="nav-empty">No generated views.</div>
+            ) : generatedViews.map((view) => {
+              const summary = routeSummaries.get(view.path);
+              return (
+                <button
+                  key={view.path}
+                  className={`view-button generated ${props.currentRouteView?.path === view.path ? "active" : ""}`}
+                  onClick={() => props.onRouteView(view)}
+                >
+                  <FileText size={13} />
+                  <span className="view-button-main">
+                    <b>{view.title}</b>
+                    {summary && <small>{summary.target} · {summary.objects} objects · {summary.tokens} tokens</small>}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="command-hint">Find any object with Cmd/Ctrl+K.</div>
+        </section>
+      ) : (
+        <>
+          <section className="filter-input-wrap">
+            <Search size={14} />
+            <input value={props.treeFilter} onChange={(event) => props.setTreeFilter(event.target.value)} placeholder="Filter objects..." />
+          </section>
+          <section className="tree-section">
+            {grouped.length === 0 ? (
+              <div className="tree-empty">No matching objects.</div>
+            ) : grouped.map((group) => (
+              <div className="tree-group" key={group.group}>
+                <div className="tree-group-label">{group.group}</div>
+                {group.objects.map((object) => (
+                  <button
+                    key={object.uid}
+                    className={`tree-item ${props.selectedUid === object.uid ? "selected" : ""} ${["disproved", "obsolete", "archived"].includes(object.status) ? "faded" : ""}`}
+                    onClick={() => props.onOpenFull(object)}
+                    title="Open full page"
+                  >
+                    <span className="status-dot" style={{ background: statusColor(object.status) }} />
+                    <span className="kind-mini">{kindIcon(object.kind, 12)}</span>
+                    <span className="tree-short">{shortName(object.name)}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </section>
+          <button className="archived-toggle" onClick={() => props.setShowArchived(!props.showArchived)}>
+            {props.showArchived ? "Hide" : "Show"} archived & obsolete ({archivedCount})
+          </button>
+        </>
+      )}
     </aside>
+  );
+}
+
+function CommandPalette(props: {
+  graph: NormalizedGraph;
+  currentView?: AtlasView;
+  currentRouteView?: AtlasRouteView;
+  selectedUid?: string;
+  onClose: () => void;
+  onView: (view: AtlasView) => void;
+  onRouteView: (view: AtlasRouteView) => void;
+  onOpenFull: (object: NormalizedObject) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const manualViews = useMemo(() => {
+    return [...props.graph.views].sort((a, b) => viewSortKey(props.graph, a).localeCompare(viewSortKey(props.graph, b)));
+  }, [props.graph]);
+  const generatedViews = useMemo(() => {
+    return [...props.graph.routeViews].sort((a, b) => a.title.localeCompare(b.title));
+  }, [props.graph.routeViews]);
+  const routeSummaries = useMemo(() => {
+    return new Map(generatedViews.map((view) => {
+      const route = resolveRoute(props.graph, view.route);
+      return [view.path, {
+        target: shortName(route.target.name),
+        objects: route.nodes.length,
+        tokens: formatTokenCount(route.totalTokens)
+      }];
+    }));
+  }, [generatedViews, props.graph]);
+  const normalizedQuery = query.trim().toLowerCase();
+  const objectResults = useMemo(() => {
+    return props.graph.objects
+      .filter((object) => {
+        if (!normalizedQuery) return true;
+        return `${object.name} ${object.title} ${object.role}`.toLowerCase().includes(normalizedQuery);
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, 10);
+  }, [normalizedQuery, props.graph.objects]);
+  const manualResults = manualViews.filter((view) => {
+    if (!normalizedQuery) return true;
+    return `${viewLabel(view)} ${view.path}`.toLowerCase().includes(normalizedQuery);
+  }).slice(0, 5);
+  const generatedResults = generatedViews.filter((view) => {
+    const summary = routeSummaries.get(view.path);
+    if (!normalizedQuery) return true;
+    return `${view.title} ${view.path} ${summary?.target ?? ""}`.toLowerCase().includes(normalizedQuery);
+  }).slice(0, 5);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const empty = objectResults.length === 0 && manualResults.length === 0 && generatedResults.length === 0;
+  return (
+    <div className="command-overlay" onMouseDown={props.onClose}>
+      <section className="command-panel" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="command-search">
+          <Search size={15} />
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Jump to a view or object..."
+          />
+          <kbd>Esc</kbd>
+        </div>
+        {empty ? (
+          <div className="command-empty">No matching commands.</div>
+        ) : (
+          <div className="command-results">
+            {manualResults.length > 0 && (
+              <div className="command-group">
+                <div className="command-group-label">Manual Views</div>
+                {manualResults.map((view) => (
+                  <button
+                    key={view.path}
+                    className={`command-row ${props.currentView?.path === view.path ? "active" : ""}`}
+                    onClick={() => props.onView(view)}
+                  >
+                    {viewIcon(view)}
+                    <span>
+                      <b>{viewLabel(view)}</b>
+                      <small>{view.path === props.graph.config.default_view ? "default view" : view.path}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {generatedResults.length > 0 && (
+              <div className="command-group">
+                <div className="command-group-label">Generated Views</div>
+                {generatedResults.map((view) => {
+                  const summary = routeSummaries.get(view.path);
+                  return (
+                    <button
+                      key={view.path}
+                      className={`command-row ${props.currentRouteView?.path === view.path ? "active" : ""}`}
+                      onClick={() => props.onRouteView(view)}
+                    >
+                      <FileText size={14} />
+                      <span>
+                        <b>{view.title}</b>
+                        <small>{summary ? `${summary.target} · ${summary.objects} objects · ${summary.tokens} tokens` : view.path}</small>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {objectResults.length > 0 && (
+              <div className="command-group">
+                <div className="command-group-label">Objects</div>
+                {objectResults.map((object) => (
+                  <button
+                    key={object.uid}
+                    className={`command-row ${props.selectedUid === object.uid ? "active" : ""}`}
+                    onClick={() => props.onOpenFull(object)}
+                  >
+                    <span className="status-dot" style={{ background: statusColor(object.status) }} />
+                    <span>
+                      <b>{object.title}</b>
+                      <small>{shortName(object.name)} · {object.role}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -843,6 +1516,489 @@ function ViewPane(props: {
       {props.view.items.map((item, index) => (
         <ViewItemRenderer key={`${props.view.path}-${index}`} {...props} item={item} />
       ))}
+    </div>
+  );
+}
+
+function GeneratedRoutePane(props: {
+  graph: NormalizedGraph;
+  routeView: AtlasRouteView;
+  selectedUid?: string;
+  onSelect: (object: NormalizedObject) => void;
+  onOpenFull: (object: NormalizedObject) => void;
+}) {
+  const routeUiKey = `proof-atlas:route-ui:${props.graph.root}:${props.routeView.path}`;
+  const initialRouteUi = readRoutePaneUiState(routeUiKey);
+  const [tab, setTab] = useState<RoutePaneTab>(initialRouteUi.tab ?? "linear");
+  const [graphQuery, setGraphQuery] = useState(initialRouteUi.graphQuery ?? "");
+  const [graphScale, setGraphScale] = useState(initialRouteUi.graphScale ?? 1);
+  const [expandedWitnesses, setExpandedWitnesses] = useState<Set<string>>(() => new Set());
+  const pendingClick = useRef<number | undefined>(undefined);
+  const graphCanvasRef = useRef<HTMLDivElement | null>(null);
+  const pendingGraphScroll = useRef<{ left: number; top: number } | null>({
+    left: initialRouteUi.graphScrollLeft ?? 0,
+    top: initialRouteUi.graphScrollTop ?? 0
+  });
+  const resolved = useMemo(() => resolveRoute(props.graph, props.routeView.route), [props.graph, props.routeView]);
+  const linear = useMemo(() => linearizeRoute(resolved), [resolved]);
+  const routeNodesByName = useMemo(() => new Map(resolved.nodes.map((node) => [node.object.name, node])), [resolved.nodes]);
+  const spineNodes = linear.nodes.filter((node) => node.inclusionClass === "spine");
+  const vocabularyNodes = linear.nodes.filter((node) => node.inclusionClass === "vocabulary");
+  const boundaryNodes = linear.nodes.filter((node) => node.inclusionClass === "boundary");
+  const openNodes = linear.nodes.filter((node) => node.inclusionClass === "open");
+  const mainGraphNodes = linear.nodes.filter((node) => node.inclusionClass !== "vocabulary");
+  const mainGraphNodeNames = new Set(mainGraphNodes.map((node) => node.object.name));
+  const visibleGraphEdges = resolved.edges.filter((edge) => mainGraphNodeNames.has(edge.source) && mainGraphNodeNames.has(edge.target));
+  const routeStatusLabel = openNodes.length > 0
+    ? `open at ${shortName(openNodes[0].object.name)}${openNodes.length > 1 ? ` +${openNodes.length - 1}` : ""}`
+    : resolved.closed && resolved.contentSufficient ? "closed" : "diagnostics";
+  const graphSearch = graphQuery.trim().toLowerCase();
+  const graphLayout = useMemo(() => {
+    const nodeWidth = 214;
+    const nodeHeight = 70;
+    const columnGap = 284;
+    const rowGap = 92;
+    const paddingX = 54;
+    const paddingY = 58;
+    const linearIndex = new Map(linear.nodes.map((node, index) => [node.object.name, index]));
+    const nodesByDepth = new Map<number, ResolvedRouteNode[]>();
+    for (const node of linear.nodes.filter((item) => item.inclusionClass !== "vocabulary")) {
+      nodesByDepth.set(node.depth, [...(nodesByDepth.get(node.depth) ?? []), node]);
+    }
+    const depths = [...nodesByDepth.keys()].sort((a, b) => a - b);
+    const positions = new Map<string, RouteGraphPosition>();
+    const columns: Array<{ depth: number; x: number; count: number }> = [];
+    let maxRows = 1;
+    for (const [depthIndex, depth] of depths.entries()) {
+      const nodes = [...(nodesByDepth.get(depth) ?? [])].sort((a, b) => {
+        return (linearIndex.get(a.object.name) ?? Number.MAX_SAFE_INTEGER) - (linearIndex.get(b.object.name) ?? Number.MAX_SAFE_INTEGER)
+          || a.object.name.localeCompare(b.object.name);
+      });
+      maxRows = Math.max(maxRows, nodes.length);
+      const x = paddingX + depthIndex * columnGap;
+      columns.push({ depth, x, count: nodes.length });
+      for (const [nodeIndex, node] of nodes.entries()) {
+        positions.set(node.object.name, {
+          x,
+          y: paddingY + nodeIndex * rowGap,
+          width: nodeWidth,
+          height: nodeHeight,
+          depth
+        });
+      }
+    }
+    return {
+      positions,
+      columns,
+      width: Math.max(980, paddingX * 2 + Math.max(1, depths.length - 1) * columnGap + nodeWidth),
+      height: Math.max(440, paddingY * 2 + Math.max(1, maxRows - 1) * rowGap + nodeHeight),
+      nodeWidth,
+      nodeHeight
+    };
+  }, [linear.nodes]);
+  const selectedRouteNode = props.selectedUid
+    ? resolved.nodes.find((node) => node.object.uid === props.selectedUid)
+    : undefined;
+  const activeRouteNode = selectedRouteNode ?? routeNodesByName.get(resolved.target.name);
+  const activeNodeName = activeRouteNode?.object.name;
+  const witnessPath = activeRouteNode?.witnessPaths[0] ?? [];
+  const witnessNodes = new Set(witnessPath);
+  const witnessEdges = new Set(witnessPath.slice(1).map((target, index) => `${witnessPath[index]}->${target}`));
+  const focusedEdges = activeNodeName
+    ? resolved.edges.filter((edge) => edge.source === activeNodeName || edge.target === activeNodeName)
+    : resolved.edges;
+  const focusedEdgeKeys = new Set(focusedEdges.map(routeEdgeKey));
+  const focusedNodeNames = new Set<string>(activeNodeName ? [activeNodeName] : []);
+  for (const edge of focusedEdges) {
+    focusedNodeNames.add(edge.source);
+    focusedNodeNames.add(edge.target);
+  }
+  const graphNodeMatches = (node: ResolvedRouteNode) => {
+    if (!graphSearch) return true;
+    return `${node.object.name} ${node.object.title} ${node.role} ${node.decision} ${node.representation}`.toLowerCase().includes(graphSearch);
+  };
+  const witnessLabel = (name: string) => {
+    const object = props.graph.objectsByName[name];
+    return object ? object.title : shortName(name);
+  };
+  const toggleWitness = (name: string) => {
+    setExpandedWitnesses((current) => {
+      const next = new Set(current);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+  useEffect(() => () => {
+    if (pendingClick.current !== undefined) window.clearTimeout(pendingClick.current);
+  }, []);
+  useEffect(() => {
+    const stored = readRoutePaneUiState(routeUiKey);
+    setTab(stored.tab ?? "linear");
+    setGraphQuery(stored.graphQuery ?? "");
+    setGraphScale(stored.graphScale ?? 1);
+    pendingGraphScroll.current = {
+      left: stored.graphScrollLeft ?? 0,
+      top: stored.graphScrollTop ?? 0
+    };
+  }, [routeUiKey]);
+  useEffect(() => {
+    writeRoutePaneUiState(routeUiKey, { tab, graphQuery, graphScale });
+  }, [graphQuery, graphScale, routeUiKey, tab]);
+  useLayoutEffect(() => {
+    if (tab !== "graph" || !graphCanvasRef.current || !pendingGraphScroll.current) return;
+    graphCanvasRef.current.scrollLeft = pendingGraphScroll.current.left;
+    graphCanvasRef.current.scrollTop = pendingGraphScroll.current.top;
+    pendingGraphScroll.current = null;
+  }, [graphLayout.height, graphLayout.width, graphScale, routeUiKey, tab]);
+  useLayoutEffect(() => {
+    if (tab !== "graph" || !graphCanvasRef.current || !activeNodeName) return;
+    const position = graphLayout.positions.get(activeNodeName);
+    if (!position) return;
+    const canvas = graphCanvasRef.current;
+    const left = clamp(
+      (position.x + position.width / 2) * graphScale - canvas.clientWidth / 2,
+      0,
+      Math.max(0, canvas.scrollWidth - canvas.clientWidth)
+    );
+    const top = clamp(
+      (position.y + position.height / 2) * graphScale - canvas.clientHeight / 2,
+      0,
+      Math.max(0, canvas.scrollHeight - canvas.clientHeight)
+    );
+    canvas.scrollTo({ left, top });
+    writeRoutePaneUiState(routeUiKey, { graphScrollLeft: left, graphScrollTop: top });
+  }, [activeNodeName, graphLayout.height, graphLayout.positions, graphScale, routeUiKey, tab]);
+  const clearPendingClick = () => {
+    if (pendingClick.current !== undefined) {
+      window.clearTimeout(pendingClick.current);
+      pendingClick.current = undefined;
+    }
+  };
+  const handleGeneratedClick = (event: ReactMouseEvent<Element>, object: NormalizedObject) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.detail >= 2) {
+      clearPendingClick();
+      return;
+    }
+    clearPendingClick();
+    pendingClick.current = window.setTimeout(() => {
+      props.onSelect(object);
+      pendingClick.current = undefined;
+    }, 180);
+  };
+  const handleGeneratedDoubleClick = (event: ReactMouseEvent<Element>, object: NormalizedObject) => {
+    event.preventDefault();
+    event.stopPropagation();
+    clearPendingClick();
+    props.onOpenFull(object);
+  };
+  const handleGeneratedKeyDown = (event: ReactKeyboardEvent<Element>, object: NormalizedObject) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    props.onSelect(object);
+  };
+  const copyCommand = async (command: string) => {
+    await navigator.clipboard?.writeText(command).catch(() => undefined);
+  };
+  const routeCommand = `npm run atlas -- route ${props.routeView.path} ${props.graph.root}`;
+  const exportCommand = `npm run atlas -- export ${props.routeView.path} ${props.graph.root} --format markdown`;
+  const localAiRequest = [
+    `Inspect the Proof Atlas generated route ${props.routeView.path}.`,
+    `Project: ${props.graph.root}`,
+    `Target: ${resolved.target.name}`,
+    `Run: ${routeCommand}`,
+    `Cloud context: ${exportCommand}`
+  ].join("\n");
+
+  const renderNode = (node: ReturnType<typeof linearizeRoute>["nodes"][number]) => {
+    const witness = node.witnessPaths[0] ?? [node.object.name];
+    const parentName = witness.length > 1 ? witness[witness.length - 2] : undefined;
+    const parent = parentName ? props.graph.objectsByName[parentName] : undefined;
+    const expanded = expandedWitnesses.has(node.object.name);
+    const fullPathTitle = witness.map(witnessLabel).join(" -> ");
+    const witnessTail = witness.length > 4 ? witness.slice(-4) : witness;
+    const collapsedWitnessPrefix = witnessTail.length < witness.length;
+    return (
+      <div
+        key={node.object.uid}
+        role="button"
+        tabIndex={0}
+        className={`generated-node-row inclusion-${node.inclusionClass} ${props.selectedUid === node.object.uid ? "selected" : ""}`}
+        data-object-name={node.object.name}
+        onClick={(event) => handleGeneratedClick(event, node.object)}
+        onDoubleClick={(event) => handleGeneratedDoubleClick(event, node.object)}
+        onKeyDown={(event) => handleGeneratedKeyDown(event, node.object)}
+      >
+        <span className="status-dot" style={{ background: statusColor(node.object.status) }} />
+        <span className="generated-node-title">{node.object.title}</span>
+        <code>{shortName(node.object.name)}</code>
+        <span className="route-chip route-chip-class" title="Route inclusion class">{node.inclusionClass}</span>
+        <span className="route-chip route-chip-decision" title="Route decision">{node.decision}</span>
+        <span className="route-chip route-chip-representation" title="Cloud export representation">{node.representation}</span>
+        <button
+          className="witness-toggle"
+          aria-label={`${expanded ? "Collapse" : "Expand"} witness path for ${node.object.title}`}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            toggleWitness(node.object.name);
+          }}
+          onDoubleClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+        >
+          <ChevronDown size={13} className={expanded ? "open" : ""} />
+        </button>
+        <div className={`generated-witness ${expanded ? "expanded" : ""}`} title={fullPathTitle}>
+          <span className="generated-witness-summary">
+            {parent ? `← ${shortName(parent.name)}` : "route root"} · depth {node.depth}
+          </span>
+          {expanded && (
+            <span className="generated-witness-trail">
+              {collapsedWitnessPrefix && (
+                <span className="generated-witness-segment">
+                  <b>...</b>
+                  <i>→</i>
+                </span>
+              )}
+              {witnessTail.map((name, index) => (
+                <span className="generated-witness-segment" key={`${node.object.uid}-${name}-${index}`}>
+                  {index > 0 && <i>→</i>}
+                  <b>{truncateLabel(witnessLabel(name), index === witnessTail.length - 1 ? 34 : 26)}</b>
+                </span>
+              ))}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderNodeSection = (title: string, nodes: ResolvedRouteNode[], summary?: string) => {
+    if (nodes.length === 0) return null;
+    return (
+      <section className="generated-group">
+        <div className="generated-section-heading">
+          <h2>{title}</h2>
+          <code>{summary ?? `${nodes.length}`}</code>
+        </div>
+        <div className="generated-node-list">
+          {nodes.map(renderNode)}
+        </div>
+      </section>
+    );
+  };
+
+  return (
+    <div className="reading-shell generated-view">
+      <div className="view-kicker">Generated View</div>
+      <div className="generated-heading">
+        <div>
+          <h1>{props.routeView.title}</h1>
+          <p className="view-subtitle"><code>{resolved.target.name}</code> · {resolved.profile} · {routeStatusLabel} · spine {spineNodes.length} / context {vocabularyNodes.length} · {resolved.nodes.length} objects · {resolved.totalTokens} tokens</p>
+        </div>
+        <div className="generated-actions">
+          <button className="toolbar-button" onClick={() => void copyCommand(routeCommand)}><Copy size={13} /> Route</button>
+          <button className="toolbar-button" onClick={() => void copyCommand(localAiRequest)}><Copy size={13} /> Local AI</button>
+          <button className="toolbar-button" onClick={() => void copyCommand(exportCommand)}><Copy size={13} /> Export</button>
+        </div>
+      </div>
+      <div className="segmented-control">
+        <button className={tab === "linear" ? "active" : ""} onClick={() => setTab("linear")}>Linear</button>
+        <button className={tab === "graph" ? "active" : ""} onClick={() => setTab("graph")}>Graph</button>
+      </div>
+
+      {(openNodes.length > 0 || !resolved.contentSufficient) && (
+        <div className="route-open-banner">
+          <AlertTriangle size={15} />
+          <span>{openNodes.length > 0 ? `Route is open at ${openNodes.map((node) => shortName(node.object.name)).join(", ")}.` : "Route has blocking diagnostics."}</span>
+        </div>
+      )}
+
+      {resolved.diagnostics.length > 0 && (
+        <div className="route-diagnostics">
+          {resolved.diagnostics.map((item) => (
+            <div key={`${item.code}-${item.message}`} className={item.severity}>{item.code}: {item.message}</div>
+          ))}
+        </div>
+      )}
+
+      {tab === "linear" ? (
+        <div className="generated-linear">
+          {renderNodeSection("Proof spine", spineNodes, `${spineNodes.length} spine`)}
+          {renderNodeSection("Boundaries", boundaryNodes, `${boundaryNodes.length} boundary`)}
+          {renderNodeSection("Open obligations", openNodes, `${openNodes.length} open`)}
+          {vocabularyNodes.length > 0 && (
+            <details className="generated-context-section">
+              <summary>
+                <span>Definitions & vocabulary</span>
+                <code>{vocabularyNodes.length} context</code>
+              </summary>
+              <div className="generated-node-list">
+                {vocabularyNodes.map(renderNode)}
+              </div>
+            </details>
+          )}
+        </div>
+      ) : (
+        <div className="generated-graph">
+          <div className="generated-graph-controls">
+            <label className="generated-graph-search">
+              <Search size={14} />
+              <input
+                value={graphQuery}
+                onChange={(event) => setGraphQuery(event.target.value)}
+                placeholder="Search route graph..."
+              />
+            </label>
+            <div className="generated-graph-zoom">
+              <button onClick={() => setGraphScale((value) => Math.max(0.75, Number((value - 0.15).toFixed(2))))}>-</button>
+              <span>{Math.round(graphScale * 100)}%</span>
+              <button onClick={() => setGraphScale((value) => Math.min(1.45, Number((value + 0.15).toFixed(2))))}>+</button>
+            </div>
+          </div>
+          <div
+            className="generated-graph-canvas"
+            data-graph-search={graphSearch ? "active" : "idle"}
+            ref={graphCanvasRef}
+            onScroll={(event) => {
+              writeRoutePaneUiState(routeUiKey, {
+                graphScrollLeft: event.currentTarget.scrollLeft,
+                graphScrollTop: event.currentTarget.scrollTop
+              });
+            }}
+          >
+            <svg
+              width={graphLayout.width * graphScale}
+              height={graphLayout.height * graphScale}
+              viewBox={`0 0 ${graphLayout.width} ${graphLayout.height}`}
+              role="img"
+              aria-label={`${props.routeView.title} dependency graph`}
+            >
+              <defs>
+                {ROUTE_EDGE_TYPES.map((type) => (
+                  <marker key={type} id={`route-arrow-${type}`} viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill={routeEdgeColor(type)} />
+                  </marker>
+                ))}
+              </defs>
+              {graphLayout.columns.map((column) => (
+                <g key={column.depth} className="route-graph-depth-label" transform={`translate(${column.x}, 28)`}>
+                  <text>Depth {column.depth}</text>
+                  <title>{column.count} object{column.count === 1 ? "" : "s"}</title>
+                </g>
+              ))}
+              <g className="route-graph-edges">
+                {visibleGraphEdges.map((edge) => {
+                  const source = props.graph.objectsByName[edge.source];
+                  const target = props.graph.objectsByName[edge.target];
+                  const sourceNode = source ? resolved.nodes.find((node) => node.object.uid === source.uid) : undefined;
+                  const targetNode = target ? resolved.nodes.find((node) => node.object.uid === target.uid) : undefined;
+                  const sourcePos = graphLayout.positions.get(edge.source);
+                  const targetPos = graphLayout.positions.get(edge.target);
+                  if (!sourcePos || !targetPos || !sourceNode || !targetNode) return null;
+                  const key = routeEdgeKey(edge);
+                  const focused = focusedEdgeKeys.has(key);
+                  const highlighted = focused || witnessEdges.has(`${edge.source}->${edge.target}`) || witnessEdges.has(`${edge.target}->${edge.source}`);
+                  const searchDimmed = Boolean(graphSearch) && !graphNodeMatches(sourceNode) && !graphNodeMatches(targetNode);
+                  const focusDimmed = Boolean(activeNodeName) && !focused;
+                  const dimmed = searchDimmed || focusDimmed;
+                  return (
+                    <path
+                      key={key}
+                      className={`route-graph-edge edge-${edge.type} ${highlighted ? "highlighted" : ""} ${dimmed ? "dimmed" : ""}`}
+                      d={routeGraphEdgePath(sourcePos, targetPos)}
+                      markerEnd={`url(#route-arrow-${edge.type})`}
+                      style={{ "--route-edge-color": routeEdgeColor(edge.type) } as CSSProperties}
+                    />
+                  );
+                })}
+              </g>
+              <g className="route-graph-nodes">
+                {mainGraphNodes.map((node) => {
+                  const position = graphLayout.positions.get(node.object.name);
+                  if (!position) return null;
+                  const selected = activeRouteNode?.object.uid === node.object.uid;
+                  const highlighted = witnessNodes.has(node.object.name);
+                  const neighbor = focusedNodeNames.has(node.object.name);
+                  const searchDimmed = Boolean(graphSearch) && !graphNodeMatches(node);
+                  const focusDimmed = Boolean(activeNodeName) && !neighbor && !highlighted;
+                  const dimmed = searchDimmed || focusDimmed;
+                  return (
+                    <g
+                      key={node.object.uid}
+                      className={`route-graph-node inclusion-${node.inclusionClass} ${selected ? "selected" : ""} ${neighbor ? "neighbor" : ""} ${highlighted ? "highlighted" : ""} ${dimmed ? "dimmed" : ""}`}
+                      transform={`translate(${position.x}, ${position.y})`}
+                      data-object-name={node.object.name}
+                      onClick={(event) => handleGeneratedClick(event, node.object)}
+                      onDoubleClick={(event) => handleGeneratedDoubleClick(event, node.object)}
+                      style={{ "--route-node-accent": routeNodeAccent(node, resolved.target.name) } as CSSProperties}
+                    >
+                      <title>{`${node.object.title} (${node.object.name})`}</title>
+                      <rect width={position.width} height={position.height} rx="7" />
+                      <rect className="route-graph-node-accent" width="5" height={position.height} rx="2.5" />
+                      <circle cx="17" cy="19" r="4" fill={statusColor(node.object.status)} />
+                      <text className="route-graph-node-title" x="29" y="22">{truncateLabel(node.object.title, 27)}</text>
+                      <text className="route-graph-node-name" x="14" y="41">{truncateLabel(shortName(node.object.name), 27)}</text>
+                      <text className="route-graph-node-mode" x="14" y="57">{routeNodeCategory(node, resolved.target.name)} · {node.representation}</text>
+                    </g>
+                  );
+                })}
+              </g>
+            </svg>
+          </div>
+          <div className="route-graph-legend">
+            {ROUTE_EDGE_TYPES.filter((type) => resolved.edges.some((edge) => edge.type === type)).map((type) => (
+              <span key={type}><i style={{ background: routeEdgeColor(type) }} />{type}</span>
+            ))}
+          </div>
+          {vocabularyNodes.length > 0 && (
+            <details className="route-context-drawer">
+              <summary>
+                <span>Definitions & vocabulary</span>
+                <code>{vocabularyNodes.length} context</code>
+              </summary>
+              <div className="route-context-list">
+                {vocabularyNodes.map(renderNode)}
+              </div>
+            </details>
+          )}
+          <div className="generated-edge-heading">
+            <span>Edges for</span>
+            <b>{activeRouteNode?.object.title ?? resolved.target.title}</b>
+            <code>{focusedEdges.length}</code>
+          </div>
+          <div className="generated-edge-list">
+            {focusedEdges.map((edge) => {
+              const source = props.graph.objectsByName[edge.source];
+              const target = props.graph.objectsByName[edge.target];
+              const sourceNode = source ? resolved.nodes.find((node) => node.object.uid === source.uid) : undefined;
+              const targetNode = target ? resolved.nodes.find((node) => node.object.uid === target.uid) : undefined;
+              const dimmed = Boolean(graphSearch) && sourceNode && targetNode && !graphNodeMatches(sourceNode) && !graphNodeMatches(targetNode);
+              const nextObject = activeNodeName === edge.target ? source : target ?? source;
+              return (
+                <button
+                  key={routeEdgeKey(edge)}
+                  className={`generated-edge-row edge-${edge.type} highlighted ${dimmed ? "dimmed" : ""}`}
+                  data-edge-source={edge.source}
+                  data-edge-target={edge.target}
+                  style={{ "--route-edge-color": routeEdgeColor(edge.type) } as CSSProperties}
+                  onClick={(event) => nextObject && handleGeneratedClick(event, nextObject)}
+                  onDoubleClick={(event) => nextObject && handleGeneratedDoubleClick(event, nextObject)}
+                >
+                  <span>{source?.title ?? edge.source}</span>
+                  <code>{edge.type}</code>
+                  <b>{target?.title ?? edge.target}</b>
+                  <em>{edge.strength}</em>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -961,7 +2117,7 @@ function DashboardPane(props: Parameters<typeof ViewPane>[0]) {
             <span className="issue-dot" />
             <b>{issue.priority ?? "open"}</b>
             <strong>{issue.title}</strong>
-            <code>blocks {shortName((issue.edges.blocks ?? [])[0] ?? "")}</code>
+            <code>blocks {shortName(edgeTargets(issue.edges.blocks)[0] ?? "")}</code>
           </button>
         ))}
       </div>
@@ -1116,7 +2272,7 @@ function ObjectCard(props: {
   ) : (
     <div className="card-summary">
       {props.object.summary || (isProof ? "Proof details are folded until needed." : "Open the card to read this object.")}
-      {isProof && <button onClick={props.onToggle}>Show proof ({(props.object.edges.uses ?? []).length} uses) <ChevronDown size={13} /></button>}
+      {isProof && <button onClick={props.onToggle}>Show proof ({edgeTargets(props.object.edges.uses).length} uses) <ChevronDown size={13} /></button>}
     </div>
   );
   return (
@@ -1202,6 +2358,8 @@ function DetailPanel(props: {
   onOpenPreview: (object: NormalizedObject) => void;
   onCopy: (object: NormalizedObject) => Promise<void>;
   copied: boolean;
+  routeNode?: ResolvedRouteNode;
+  routeDiagnostics?: RouteDiagnostic[];
 }) {
   useEffect(() => {
     void props.ensureBody(props.object.uid);
@@ -1240,6 +2398,9 @@ function DetailPanel(props: {
           />
         </div>
       </div>
+      {props.routeNode && (
+        <RouteInclusionPanel node={props.routeNode} diagnostics={props.routeDiagnostics ?? []} />
+      )}
       <RelationList graph={props.graph} object={props.object} onSelect={props.onSelect} onOpenPreview={props.onOpenPreview} />
       <div className="detail-section">
         <div className="detail-label">Body files</div>
@@ -1251,6 +2412,52 @@ function DetailPanel(props: {
         <span>path</span><code>{props.object.path}/</code>
       </div>
     </aside>
+  );
+}
+
+function RouteInclusionPanel(props: { node: ResolvedRouteNode; diagnostics: RouteDiagnostic[] }) {
+  const cost = props.node.marginalCost;
+  const marginal = [
+    cost.downgrade_to_statement !== undefined ? `statement ${cost.downgrade_to_statement >= 0 ? "-" : "+"}${Math.abs(cost.downgrade_to_statement)}` : undefined,
+    cost.downgrade_to_summary !== undefined ? `summary ${cost.downgrade_to_summary >= 0 ? "-" : "+"}${Math.abs(cost.downgrade_to_summary)}` : undefined,
+    cost.downgrade_to_reference !== undefined ? `reference ${cost.downgrade_to_reference >= 0 ? "-" : "+"}${Math.abs(cost.downgrade_to_reference)}` : undefined,
+    cost.upgrade_to_full !== undefined ? `full +${cost.upgrade_to_full}` : undefined
+  ].filter(Boolean);
+  return (
+    <div className="detail-section route-inclusion-panel">
+      <div className="detail-label">Route inclusion</div>
+      <div className="route-facts">
+        <span>role</span><code>{props.node.role}</code>
+        <span>class</span><code>{props.node.inclusionClass}</code>
+        <span>decision</span><code>{props.node.decision}</code>
+        <span>representation</span><code>{props.node.representation}</code>
+        <span>hardness</span><code>{props.node.hardness}</code>
+        <span>depth</span><code>{props.node.depth}</code>
+        <span>tokens</span><code>{props.node.marginalCost.current}</code>
+      </div>
+      <div className="route-witnesses">
+        {props.node.witnessPaths.slice(0, 3).map((pathItems, index) => (
+          <div key={`${pathItems.join("-")}-${index}`}>
+            <b>{index === 0 ? "why" : "also"}</b>
+            <code>{pathItems.join(" -> ")}</code>
+          </div>
+        ))}
+        {props.node.witnessPaths.length > 3 && <small>{props.node.witnessPaths.length - 3} more witness path(s)</small>}
+      </div>
+      {marginal.length > 0 && (
+        <div className="route-marginal">
+          <b>marginal</b>
+          <span>{marginal.join("; ")}</span>
+        </div>
+      )}
+      {props.diagnostics.length > 0 && (
+        <div className="route-node-diagnostics">
+          {props.diagnostics.map((item) => (
+            <div key={`${item.code}-${item.message}`} className={item.severity}>{item.code}: {item.message}</div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1290,8 +2497,8 @@ function RelationList(props: {
     props.onSelect(target);
   };
   const rows: Array<{ label: string; target: NormalizedObject; derived: boolean }> = [];
-  for (const [label, targets] of Object.entries(props.object.edges)) {
-    for (const target of targets ?? []) {
+  for (const [label, refs] of Object.entries(props.object.edges)) {
+    for (const target of edgeTargets(refs)) {
       const object = props.graph.objectsByName[target];
       if (object) rows.push({ label, target: object, derived: false });
     }
@@ -1340,7 +2547,7 @@ function FullObjectPage(props: {
   useEffect(() => {
     void props.ensureBody(props.object.uid);
   }, [props.ensureBody, props.object.uid]);
-  const uses = [...(props.object.edges.uses ?? []), ...(props.object.edges.proves ?? [])]
+  const uses = [...edgeTargets(props.object.edges.requires), ...edgeTargets(props.object.edges.uses), ...edgeTargets(props.object.edges.proves)]
     .map((name) => props.graph.objectsByName[name])
     .filter((object): object is NormalizedObject => Boolean(object));
   const reverse = Object.entries(props.object.reverseEdges)
@@ -1454,7 +2661,7 @@ function ObjectOverlay(props: {
     void props.ensureBody(props.object.uid);
   }, [props.ensureBody, props.object.uid]);
 
-  const uses = [...(props.object.edges.uses ?? []), ...(props.object.edges.proves ?? [])]
+  const uses = [...edgeTargets(props.object.edges.requires), ...edgeTargets(props.object.edges.uses), ...edgeTargets(props.object.edges.proves)]
     .map((name) => props.graph.objectsByName[name])
     .filter((object): object is NormalizedObject => Boolean(object));
   const reverse = Object.entries(props.object.reverseEdges)
