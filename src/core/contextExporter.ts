@@ -32,22 +32,30 @@ function anchorForName(name: string): string {
 
 function metadataLines(graph: NormalizedGraph, node: ResolvedRouteNode): string[] {
   const object = node.object;
+  const citationLines = object.citation ? [
+    `citation_bibkey: ${object.citation.bibkey}`,
+    ...(object.citation.trust ? [`citation_trust: ${object.citation.trust}`] : []),
+    ...(object.citation.registryId ? [`citation_registry: ${object.citation.registryId}`] : [])
+  ] : [];
   return [
     `uid: ${object.uid}`,
     `name: ${object.name}`,
     `status: ${object.status}`,
     `provenance: ${object.provenance}`,
+    `origin: ${object.origin.kind}`,
+    ...(object.origin.atlasId ? [`origin_atlas: ${object.origin.atlasId}`] : []),
     `source path: ${path.posix.join(object.dir, "object.yml")}`,
     `representation: ${node.representation}`,
     `decision: ${node.decision}`,
     `inclusion_class: ${node.inclusionClass}`,
     `hardness: ${node.hardness}`,
-    `project: ${graph.config.project}`
+    `project: ${graph.config.project}`,
+    ...citationLines
   ];
 }
 
 async function readBodyFile(graph: NormalizedGraph, object: NormalizedObject, bodyFile: string, diagnostics: RouteDiagnostic[]): Promise<string> {
-  const filePath = path.join(graph.root, object.dir, bodyFile);
+  const filePath = path.join(object.origin.atlasRoot, object.dir, bodyFile);
   try {
     return await fs.readFile(filePath, "utf8");
   } catch {

@@ -6,7 +6,13 @@
 examples/semidiscrete/ProofAtlas
 ```
 
-这个示例把半离散随机抛物方程论文拆成对象图，包括论文概览、引言、连续模型、离散网格、主定理、预备命题、证明、主证明迭代、适应性审计和文献引用。
+它挂载的共享引用库位于：
+
+```text
+examples/reference-atlas/ProofAtlas
+```
+
+这个示例把半离散随机抛物方程论文拆成对象图，包括论文概览、引言、连续模型、离散网格、主定理、预备命题、证明、主证明迭代、适应性审计和文献引用。文献 note 和外部结果位于 `shared-reference-atlas`，论文项目通过 `references.mounts` 只读挂载。
 
 ## 推荐阅读顺序
 
@@ -32,7 +38,7 @@ main.setting.grid_operator
 main.model.forward_semidiscrete_system
 main.setting.spectral_spaces
 main.claim.null_controllability
-main.claim.partial_discrete_lr
+source.boyer_2010a.claim.partial_discrete_lr
 main.model.backward_adjoint_system
 main.claim.observability
 main.proof.observability
@@ -60,13 +66,13 @@ main.proof.partial_null_control proves main.claim.partial_null_control
 main.proof.partial_null_control uses main.claim.observability
 
 main.proof.observability proves main.claim.observability
-main.proof.observability uses main.claim.partial_discrete_lr
+main.proof.observability uses source.boyer_2010a.claim.partial_discrete_lr
 ```
 
 当前 v1 建模中，claim 的陈述上下文放在 `requires`；证明中实际使用的数学结果放在对应
 proof 的 `uses`。因此 `main.claim.observability` 本身只声明读懂陈述所需的模型和谱空间，
-而 `main.proof.observability` 负责记录它使用了外部的
-`main.claim.partial_discrete_lr`。
+而 `main.proof.observability` 负责记录它使用了 Reference Atlas 中的外部结果
+`source.boyer_2010a.claim.partial_discrete_lr`。
 
 ## 公式对象
 
@@ -87,11 +93,11 @@ main.eq.lr_exponent_identities
 ## 文献关系
 
 ```text
-main.claim.partial_discrete_lr cites source.boyer_2010a
+source.boyer_2010a.claim.partial_discrete_lr cites source.boyer_2010a
 main.model.forward_semidiscrete_system cites source.lue_zhang_2021
 main.model.backward_adjoint_system cites source.lue_zhang_2021
 main.model.continuous_problem cites source.lue_2011
 main.note.introduction cites all introduction references
 ```
 
-网页会把 literature 链接显示成方括号样式。
+网页会把 literature 链接显示成方括号样式。`source.*` 对象来自 `examples/reference-atlas/ProofAtlas`，因此右栏会显示 `origin: global_reference`、`origin_atlas: shared-reference-atlas`、bibkey 和 trust。普通论文项目不再本地维护这些 `source.*` 对象。

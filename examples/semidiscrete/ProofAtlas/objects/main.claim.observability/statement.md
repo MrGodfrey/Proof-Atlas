@@ -23,4 +23,4 @@ $$
 |a|^2_{L^\infty_{\mathbb{F}}(0,T;\mathbb{R})}.
 $$
 
-This statement uses the imported spectral inequality [[main.claim.partial_discrete_lr]] and is proved in [[main.proof.observability]].
+This statement uses the imported spectral inequality [[source.boyer_2010a.claim.partial_discrete_lr]] and is proved in [[main.proof.observability]].

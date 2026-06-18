@@ -235,6 +235,138 @@ describe("Proof Atlas core", () => {
     expect(text).toContain("project: semi-discrete-stochastic-control");
     expect(text).toContain("selection:");
     expect(text).toContain("excerpt:");
+    expect(text).not.toContain("origin: project");
+    expect(text).not.toContain("origin_atlas_root:");
     expect(text).not.toContain("The proof route is");
+  });
+
+  it("mounts reference atlas objects into the project graph with citation trust", async () => {
+    const root = await tempDir("pa-reference-mount-");
+    const referenceAtlas = await writeTestProject(path.join(root, "reference"), [
+      {
+        object: {
+          uid: "obj_20260618_ref001",
+          name: "source.paper",
+          kind: "note",
+          role: "literature",
+          title: "Trusted Paper",
+          body: ["note.md"],
+          provenance: "external",
+          citation: { bibkey: "Trusted2026" }
+        },
+        bodies: { "note.md": "Reusable reference note.\n" }
+      }
+    ], {
+      atlas: {
+        project: "test-reference-atlas",
+        title: "Test Reference Atlas",
+        atlas_type: "reference"
+      },
+      views: { "paper.md": "# References\n\n![[source.paper]]\n" }
+    });
+    await fs.writeFile(path.join(root, "trusted.bib"), "@Article{Trusted2026, title={Trusted Paper}, year={2026}}\n", "utf8");
+    await fs.writeFile(path.join(referenceAtlas, "bib-registry.yml"), [
+      'schema_version: "0.1"',
+      "trusted:",
+      "  - id: trusted",
+      "    path: ../../trusted.bib",
+      ""
+    ].join("\n"), "utf8");
+
+    const project = await writeTestProject(root, [
+      {
+        ...baseClaim("main.claim.a", "obj_20260618_proj01"),
+        object: {
+          uid: "obj_20260618_proj01",
+          name: "main.claim.a",
+          kind: "math",
+          role: "claim",
+          title: "A",
+          body: ["statement.md"],
+          edges: { cites: [{ target: "source.paper" }] }
+        },
+        bodies: { "statement.md": "Uses [[source.paper]].\n" }
+      }
+    ], {
+      atlas: {
+        references: {
+          mounts: [{ id: "test-reference-atlas", mode: "readonly" }]
+        }
+      }
+    });
+    await fs.writeFile(path.join(project, ".atlas", "local.yml"), [
+      "reference_atlases:",
+      "  test-reference-atlas:",
+      `    root: ${referenceAtlas}`,
+      ""
+    ].join("\n"), "utf8");
+
+    const graph = await buildGraph(project);
+    const source = graph.objectsByName["source.paper"];
+    expect(source).toBeTruthy();
+    expect(source.origin.kind).toBe("global_reference");
+    expect(source.origin.atlasId).toBe("test-reference-atlas");
+    expect(source.origin.readonly).toBe(true);
+    expect(source.citation?.trust).toBe("trusted");
+    expect(graph.objectsByName["main.claim.a"].edges.cites?.map((ref) => ref.target)).toContain("source.paper");
+    expect(graph.objectsByName["source.paper"].reverseEdges.cited_by).toContain("main.claim.a");
+    expect(await buildBodyFiles(graph, source)).toHaveLength(1);
+    expect(graph.problems.map((item) => item.code)).not.toContain("local_source_namespace_forbidden");
+    expect(hasCheckErrors(graph.problems, true)).toBe(false);
+  });
+
+  it("reports missing reference atlas mounts without cascading source target errors", async () => {
+    const root = await tempDir("pa-missing-reference-mount-");
+    const project = await writeTestProject(root, [
+      {
+        ...baseClaim("main.claim.a", "obj_20260618_miss01"),
+        object: {
+          uid: "obj_20260618_miss01",
+          name: "main.claim.a",
+          kind: "math",
+          role: "claim",
+          title: "A",
+          body: ["statement.md"],
+          edges: { cites: [{ target: "source.paper" }] }
+        },
+        bodies: { "statement.md": "Uses [[source.paper]].\n" }
+      }
+    ], {
+      atlas: {
+        references: {
+          mounts: [{ id: "missing-reference-atlas", mode: "readonly" }]
+        }
+      },
+      views: { "paper.md": "# Paper\n\n![[main.claim.a]]\n\n![[source.paper]]\n" }
+    });
+    const graph = await buildGraph(project);
+    const codes = graph.problems.map((item) => item.code);
+    expect(codes).toContain("missing_reference_atlas_mount");
+    expect(codes).not.toContain("missing_edge_target");
+    expect(codes).not.toContain("missing_markdown_link");
+    expect(codes).not.toContain("missing_embed");
+  });
+
+  it("forbids local source namespace objects in ordinary projects", async () => {
+    const root = await tempDir("pa-local-source-forbidden-");
+    const project = await writeTestProject(root, [
+      {
+        object: {
+          uid: "obj_20260618_local1",
+          name: "source.paper",
+          kind: "note",
+          role: "literature",
+          title: "Local Source",
+          body: ["note.md"],
+          provenance: "external",
+          citation: { bibkey: "Local2026" }
+        },
+        bodies: { "note.md": "Local source.\n" }
+      }
+    ], {
+      views: { "paper.md": "# Paper\n\n![[source.paper]]\n" }
+    });
+    const graph = await buildGraph(project);
+    expect(graph.problems.map((item) => item.code)).toContain("local_source_namespace_forbidden");
   });
 });

@@ -20,7 +20,7 @@
 
 ## Key Dependencies
 
-![[main.claim.partial_discrete_lr]]
+![[source.boyer_2010a.claim.partial_discrete_lr]]
 
 ![[main.claim.observability]]
 

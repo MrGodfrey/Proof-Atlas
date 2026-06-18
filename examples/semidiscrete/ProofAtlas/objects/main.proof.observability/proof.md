@@ -26,7 +26,7 @@ z_k(T)=\eta_k & \text{in }\mathcal{M}.
 \end{cases}
 $$
 
-Thanks to [[main.claim.partial_discrete_lr]], the adjoint expansion satisfies the pointwise observed low-frequency bound [[main.eq.observability_spectral_bound]].
+Thanks to [[source.boyer_2010a.claim.partial_discrete_lr]], the adjoint expansion satisfies the pointwise observed low-frequency bound [[main.eq.observability_spectral_bound]].
 
 From Ito's formula again, for all $t\in[0,T]$,
 

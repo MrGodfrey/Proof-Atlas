@@ -86,7 +86,7 @@ async function readObjectBodies(graph: NormalizedGraph, object: NormalizedObject
   const bodies: Array<{ file: string; text: string }> = [];
   for (const file of object.body) {
     try {
-      bodies.push({ file, text: await fs.readFile(path.join(graph.root, object.dir, file), "utf8") });
+      bodies.push({ file, text: await fs.readFile(path.join(object.origin.atlasRoot, object.dir, file), "utf8") });
     } catch {
       // The graph validator reports missing bodies. Suggestions should not duplicate that failure.
     }

@@ -28,7 +28,7 @@
 
 ## Preliminaries
 
-![[main.claim.partial_discrete_lr]]{expanded}
+![[source.boyer_2010a.claim.partial_discrete_lr]]{expanded}
 
 ![[main.model.backward_adjoint_system]]{expanded}
 

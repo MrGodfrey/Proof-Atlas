@@ -24,6 +24,7 @@ import { ACTIVE_STATUS, STATUS_COLORS } from "../core/constants";
 import { edgeTargets } from "../core/edgeUtils";
 import { linearizeRoute } from "../core/routeLinearizer";
 import { resolveRoute, type ResolvedRouteNode, type RouteDiagnostic } from "../core/routeResolver";
+import { objectLinkAction, type ObjectLinkArea, type ObjectLinkGesture } from "./interactions";
 import type {
   AtlasRouteView,
   AtlasProblem,
@@ -66,6 +67,13 @@ type ResizeDrag = {
   startX: number;
   startWidth: number;
 } | null;
+
+const SHORTCUTS = [
+  { keys: "Cmd/Ctrl K", action: "Open the command palette." },
+  { keys: ">key", action: "Show this shortcut reference inside the command palette." },
+  { keys: "R", action: "Toggle the right detail pane for the current center object." },
+  { keys: "Esc", action: "Close the command palette or the active overlay page." }
+];
 
 const KIND_OPTIONS: ObjectKind[] = ["math", "issue", "note"];
 const DEFAULT_LEFT_WIDTH = 262;
@@ -187,6 +195,26 @@ function shortName(name: string): string {
   if (parts[0] === "main" && parts.length > 2) return parts.slice(2).join(".");
   if (parts.length > 1) return parts.slice(1).join(".");
   return name;
+}
+
+function originLabel(object: NormalizedObject): string | undefined {
+  if (object.origin.kind === "global_reference") return object.origin.atlasId ? `global references: ${object.origin.atlasId}` : "global references";
+  if (object.origin.kind === "mounted_project") return object.origin.atlasId ? `mounted project: ${object.origin.atlasId}` : "mounted project";
+  return undefined;
+}
+
+function ObjectFactChips(props: { object: NormalizedObject }) {
+  const origin = originLabel(props.object);
+  const citation = props.object.citation;
+  if (!origin && !citation && !props.object.source_result?.statement_fidelity) return null;
+  return (
+    <div className="object-fact-chips">
+      {origin && <span>{origin}</span>}
+      {citation && <span>bibkey: <code>{citation.bibkey}</code></span>}
+      {citation?.trust && <span className={`trust-chip trust-${citation.trust}`}>{citation.trust}</span>}
+      {props.object.source_result?.statement_fidelity && <span>fidelity: {props.object.source_result.statement_fidelity}</span>}
+    </div>
+  );
 }
 
 function truncateLabel(value: string, maxLength: number): string {
@@ -335,6 +363,11 @@ function linkedObjectFromTarget(target: EventTarget | null, graph: NormalizedGra
   return object ? { element, object } : undefined;
 }
 
+function isEditableShortcutTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+}
+
 function linkedProseHandlers(props: {
   graph: NormalizedGraph;
   onSelect: (object: NormalizedObject) => void;
@@ -347,7 +380,7 @@ function linkedProseHandlers(props: {
     }
   };
   return {
-    onClick: (event: ReactMouseEvent<HTMLElement>) => {
+    onClickCapture: (event: ReactMouseEvent<HTMLElement>) => {
       const linked = linkedObjectFromTarget(event.target, props.graph);
       if (!linked) return;
       event.preventDefault();
@@ -362,7 +395,7 @@ function linkedProseHandlers(props: {
         pendingClick.current = undefined;
       }, 180);
     },
-    onDoubleClick: (event: ReactMouseEvent<HTMLElement>) => {
+    onDoubleClickCapture: (event: ReactMouseEvent<HTMLElement>) => {
       const linked = linkedObjectFromTarget(event.target, props.graph);
       if (!linked) return;
       event.preventDefault();
@@ -475,6 +508,7 @@ export default function App() {
   const [overlayUid, setOverlayUid] = useState<string | null>(null);
   const [copiedUid, setCopiedUid] = useState<string | null>(null);
   const centerPaneRef = useRef<HTMLElement | null>(null);
+  const pendingObjectLinkClick = useRef<number | null>(null);
   const pendingCenterScroll = useRef<number | null>(null);
   const scrollWriteFrame = useRef<number | null>(null);
 
@@ -615,7 +649,6 @@ export default function App() {
         setBuildOpen(false);
         return;
       }
-      if (event.key === "Escape") setCommandOpen(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -654,6 +687,13 @@ export default function App() {
   const sideRouteDiagnostics = currentResolvedRoute && sideObject
     ? currentResolvedRoute.diagnostics.filter((item) => item.objectName === sideObject.name || item.target === sideObject.name)
     : [];
+  const centerObject = route.mode === "object"
+    ? fullObject
+    : route.mode === "view" && route.focus
+      ? (objectsByUid[route.focus] ?? objectsByName[route.focus])
+      : route.mode === "route"
+        ? sideObject ?? currentResolvedRoute?.target
+        : undefined;
 
   useEffect(() => {
     if (!graph || !currentView || route.mode !== "view" || route.side || detailDismissed) return;
@@ -694,8 +734,9 @@ export default function App() {
   const openFull = useCallback((object: NormalizedObject) => {
     setFilterOpen(false);
     setBuildOpen(false);
-    navigate(objectHref(object));
-  }, [navigate]);
+    const preservedSide = detailDismissed ? undefined : sideObject?.uid;
+    navigate(objectHref(object, preservedSide));
+  }, [detailDismissed, navigate, sideObject?.uid]);
 
   const openView = useCallback((view: AtlasView) => {
     setFilterOpen(false);
@@ -718,6 +759,22 @@ export default function App() {
     const data = await response.json() as { files: BodyFile[] };
     setBodyCache((cache) => ({ ...cache, [uid]: data.files }));
   }, [bodyCache]);
+
+  const openSideObject = useCallback((object: NormalizedObject) => {
+    setFilterOpen(false);
+    setBuildOpen(false);
+    setDetailDismissed(false);
+    if (route.mode === "object" && fullObject) {
+      navigate(objectHref(fullObject, object.uid), "preserve");
+    } else if (route.mode === "route" && currentRouteView) {
+      navigate(routeGeneratedView(currentRouteView, object.uid), "preserve");
+    } else if (currentView) {
+      navigate(routeView(currentView, route.mode === "view" ? route.focus : undefined, object.uid), "preserve");
+    } else {
+      return;
+    }
+    void ensureBody(object.uid);
+  }, [currentRouteView, currentView, ensureBody, fullObject, navigate, route]);
 
   const selectObjectKeepingOverlay = useCallback((object: NormalizedObject) => {
     setFilterOpen(false);
@@ -744,6 +801,71 @@ export default function App() {
     void ensureBody(object.uid);
   }, [ensureBody]);
 
+  useEffect(() => {
+    if (!graph) return undefined;
+    const clearPendingObjectLinkClick = () => {
+      if (pendingObjectLinkClick.current !== null) {
+        window.clearTimeout(pendingObjectLinkClick.current);
+        pendingObjectLinkClick.current = null;
+      }
+    };
+    const linkTarget = (event: MouseEvent): { area: ObjectLinkArea; object: NormalizedObject } | undefined => {
+      const linked = linkedObjectFromTarget(event.target, graph);
+      if (!linked) return undefined;
+      const area: ObjectLinkArea = linked.element.closest(".object-overlay-panel")
+        ? "overlay"
+        : linked.element.closest(".detail-panel")
+          ? "detail"
+          : "center";
+      return { area, object: linked.object };
+    };
+    const runAction = (area: ObjectLinkArea, gesture: ObjectLinkGesture, object: NormalizedObject) => {
+      const action = objectLinkAction(area, gesture);
+      if (action === "preview") {
+        openOverlay(object);
+      } else if (action === "openSide") {
+        openSideObject(object);
+      } else if (action === "selectKeepingOverlay") {
+        selectObjectKeepingOverlay(object);
+      } else {
+        selectObject(object);
+      }
+    };
+    const intercept = (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+    const onClick = (event: MouseEvent) => {
+      const target = linkTarget(event);
+      if (!target) return;
+      intercept(event);
+      if (event.detail >= 2) {
+        clearPendingObjectLinkClick();
+        return;
+      }
+      clearPendingObjectLinkClick();
+      pendingObjectLinkClick.current = window.setTimeout(() => {
+        runAction(target.area, "single", target.object);
+        pendingObjectLinkClick.current = null;
+      }, 180);
+    };
+    const onDoubleClick = (event: MouseEvent) => {
+      const target = linkTarget(event);
+      if (!target) return;
+      intercept(event);
+      clearPendingObjectLinkClick();
+      runAction(target.area, "double", target.object);
+    };
+    document.addEventListener("click", onClick, true);
+    document.addEventListener("dblclick", onDoubleClick, true);
+    return () => {
+      clearPendingObjectLinkClick();
+      document.removeEventListener("click", onClick, true);
+      document.removeEventListener("dblclick", onDoubleClick, true);
+    };
+  }, [graph, openOverlay, openSideObject, selectObject, selectObjectKeepingOverlay]);
+
   const goHistory = useCallback((delta: -1 | 1) => {
     setOverlayUid(null);
     persistCenterScroll();
@@ -763,6 +885,38 @@ export default function App() {
     }
     if (currentView) navigate(routeView(currentView, route.mode === "view" ? route.focus : undefined), "preserve");
   }, [currentRouteView, currentView, fullObject, navigate, route]);
+
+  useEffect(() => {
+    const detailVisible = Boolean(sideObject && (route.mode === "view" || route.mode === "route" || route.mode === "object"));
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (commandOpen) {
+          event.preventDefault();
+          setCommandOpen(false);
+          return;
+        }
+        if (overlayUid) {
+          event.preventDefault();
+          setOverlayUid(null);
+        }
+        return;
+      }
+      if (isEditableShortcutTarget(event.target) || event.metaKey || event.ctrlKey || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === "r") {
+        event.preventDefault();
+        if (detailVisible) {
+          closeDetailPanel();
+          return;
+        }
+        const object = centerObject ?? fullObject ?? sideObject;
+        if (object) selectObject(object);
+        return;
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [centerObject, closeDetailPanel, commandOpen, fullObject, overlayUid, route.mode, selectObject, sideObject]);
 
   const startResize = useCallback((side: "left" | "right", event: ReactMouseEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -883,7 +1037,11 @@ export default function App() {
         {leftOpen && (
           <ColumnResizer side="left" label="Resize navigation column" onMouseDown={(event) => startResize("left", event)} />
         )}
-        <main className="center-pane" ref={centerPaneRef} onScroll={scheduleCenterScrollPersist}>
+        <main
+          className="center-pane"
+          ref={centerPaneRef}
+          onScroll={scheduleCenterScrollPersist}
+        >
           {errorCount > 0 && (
             <div className="build-error-bar">
               {errorCount} build error{errorCount === 1 ? "" : "s"} found. The last readable graph is still shown.
@@ -896,6 +1054,7 @@ export default function App() {
               body={bodyCache[fullObject.uid]}
               ensureBody={ensureBody}
               onSelect={selectObject}
+              onOpenSide={openSideObject}
               onOpenFull={openFull}
               onBack={() => currentView && navigate(routeView(currentView))}
               onCopy={copyReference}
@@ -921,8 +1080,9 @@ export default function App() {
               statusFilter={statusFilter}
               kindFilter={kindFilter}
               showArchived={showArchived}
-              selectedUid={sideObject?.uid}
+              selectedUid={route.mode === "view" ? route.focus : undefined}
               onSelect={selectObject}
+              onOpenSide={openSideObject}
               onOpenFull={openFull}
               onOpenPreview={openOverlay}
               onCopy={copyReference}
@@ -1366,6 +1526,7 @@ function LeftNav(props: {
                   <button
                     key={object.uid}
                     className={`tree-item ${props.selectedUid === object.uid ? "selected" : ""} ${["disproved", "obsolete", "archived"].includes(object.status) ? "faded" : ""}`}
+                    data-object-uid={object.uid}
                     onClick={() => props.onOpenFull(object)}
                     title="Open full page"
                   >
@@ -1415,7 +1576,9 @@ function CommandPalette(props: {
     }));
   }, [generatedViews, props.graph]);
   const normalizedQuery = query.trim().toLowerCase();
+  const showShortcuts = normalizedQuery === ">key" || normalizedQuery === ">keys" || normalizedQuery.startsWith(">key ");
   const objectResults = useMemo(() => {
+    if (showShortcuts) return [];
     return props.graph.objects
       .filter((object) => {
         if (!normalizedQuery) return true;
@@ -1423,12 +1586,14 @@ function CommandPalette(props: {
       })
       .sort((a, b) => a.name.localeCompare(b.name))
       .slice(0, 10);
-  }, [normalizedQuery, props.graph.objects]);
+  }, [normalizedQuery, props.graph.objects, showShortcuts]);
   const manualResults = manualViews.filter((view) => {
+    if (showShortcuts) return false;
     if (!normalizedQuery) return true;
     return `${viewLabel(view)} ${view.path}`.toLowerCase().includes(normalizedQuery);
   }).slice(0, 5);
   const generatedResults = generatedViews.filter((view) => {
+    if (showShortcuts) return false;
     const summary = routeSummaries.get(view.path);
     if (!normalizedQuery) return true;
     return `${view.title} ${view.path} ${summary?.target ?? ""}`.toLowerCase().includes(normalizedQuery);
@@ -1438,7 +1603,7 @@ function CommandPalette(props: {
     inputRef.current?.focus();
   }, []);
 
-  const empty = objectResults.length === 0 && manualResults.length === 0 && generatedResults.length === 0;
+  const empty = !showShortcuts && objectResults.length === 0 && manualResults.length === 0 && generatedResults.length === 0;
   return (
     <div className="command-overlay" onMouseDown={props.onClose}>
       <section className="command-panel" onMouseDown={(event) => event.stopPropagation()}>
@@ -1448,7 +1613,7 @@ function CommandPalette(props: {
             ref={inputRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Jump to a view or object..."
+            placeholder="Jump to a view or object. Type >key for shortcuts..."
           />
           <kbd>Esc</kbd>
         </div>
@@ -1456,6 +1621,19 @@ function CommandPalette(props: {
           <div className="command-empty">No matching commands.</div>
         ) : (
           <div className="command-results">
+            {showShortcuts && (
+              <div className="command-group">
+                <div className="command-group-label">Keyboard Shortcuts</div>
+                {SHORTCUTS.map((shortcut) => (
+                  <div className="command-row shortcut-row" key={shortcut.keys}>
+                    <kbd>{shortcut.keys}</kbd>
+                    <span>
+                      <b>{shortcut.action}</b>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
             {manualResults.length > 0 && (
               <div className="command-group">
                 <div className="command-group-label">Manual Views</div>
@@ -1532,6 +1710,7 @@ function ViewPane(props: {
   showArchived: boolean;
   selectedUid?: string;
   onSelect: (object: NormalizedObject) => void;
+  onOpenSide: (object: NormalizedObject) => void;
   onOpenFull: (object: NormalizedObject) => void;
   onOpenPreview: (object: NormalizedObject) => void;
   onCopy: (object: NormalizedObject) => Promise<void>;
@@ -1758,6 +1937,7 @@ function GeneratedRoutePane(props: {
         tabIndex={0}
         className={`generated-node-row inclusion-${node.inclusionClass} ${props.selectedUid === node.object.uid ? "selected" : ""}`}
         data-object-name={node.object.name}
+        data-object-uid={node.object.uid}
         onClick={(event) => handleGeneratedClick(event, node.object)}
         onDoubleClick={(event) => handleGeneratedDoubleClick(event, node.object)}
         onKeyDown={(event) => handleGeneratedKeyDown(event, node.object)}
@@ -1982,6 +2162,7 @@ function GeneratedRoutePane(props: {
                       className={`route-graph-node inclusion-${node.inclusionClass} ${selected ? "selected" : ""} ${neighbor ? "neighbor" : ""} ${highlighted ? "highlighted" : ""} ${dimmed ? "dimmed" : ""}`}
                       transform={`translate(${position.x}, ${position.y})`}
                       data-object-name={node.object.name}
+                      data-object-uid={node.object.uid}
                       onClick={(event) => handleGeneratedClick(event, node.object)}
                       onDoubleClick={(event) => handleGeneratedDoubleClick(event, node.object)}
                       style={{ "--route-node-accent": routeNodeAccent(node, resolved.target.name) } as CSSProperties}
@@ -2034,6 +2215,7 @@ function GeneratedRoutePane(props: {
                   className={`generated-edge-row edge-${edge.type} highlighted ${dimmed ? "dimmed" : ""}`}
                   data-edge-source={edge.source}
                   data-edge-target={edge.target}
+                  data-object-uid={nextObject?.uid}
                   style={{ "--route-edge-color": routeEdgeColor(edge.type) } as CSSProperties}
                   onClick={(event) => nextObject && handleGeneratedClick(event, nextObject)}
                   onDoubleClick={(event) => nextObject && handleGeneratedDoubleClick(event, nextObject)}
@@ -2106,6 +2288,7 @@ function DashboardPane(props: Parameters<typeof ViewPane>[0]) {
         ensureBody={props.ensureBody}
         onToggle={() => toggleObject(object, isExpanded)}
         onSelect={props.onSelect}
+        onOpenSide={props.onOpenSide}
         onOpenFull={props.onOpenFull}
         onOpenPreview={props.onOpenPreview}
         onCopy={props.onCopy}
@@ -2136,7 +2319,7 @@ function DashboardPane(props: Parameters<typeof ViewPane>[0]) {
               graph={props.graph}
               object={question}
               files={props.bodyCache[question.uid]}
-              onSelect={props.onSelect}
+              onSelect={props.onOpenSide}
               onOpenPreview={props.onOpenPreview}
             />
           </div>
@@ -2247,7 +2430,7 @@ function ViewItemRenderer(props: Parameters<typeof ViewPane>[0] & { item: ViewIt
         graph={props.graph}
         className="prose view-markdown"
         html={props.item.html}
-        onSelect={props.onSelect}
+        onSelect={props.onOpenSide}
         onOpenPreview={props.onOpenPreview}
       />
     );
@@ -2281,6 +2464,7 @@ function ViewItemRenderer(props: Parameters<typeof ViewPane>[0] & { item: ViewIt
         props.setExpanded(next);
       }}
       onSelect={props.onSelect}
+      onOpenSide={props.onOpenSide}
       onOpenFull={props.onOpenFull}
       onOpenPreview={props.onOpenPreview}
       onCopy={props.onCopy}
@@ -2298,6 +2482,7 @@ function ObjectCard(props: {
   ensureBody: (uid: string) => Promise<void>;
   onToggle: () => void;
   onSelect: (object: NormalizedObject) => void;
+  onOpenSide: (object: NormalizedObject) => void;
   onOpenFull: (object: NormalizedObject) => void;
   onOpenPreview: (object: NormalizedObject) => void;
   onCopy: (object: NormalizedObject) => Promise<void>;
@@ -2315,7 +2500,7 @@ function ObjectCard(props: {
       graph={props.graph}
       object={props.object}
       files={props.body}
-      onSelect={props.onSelect}
+      onSelect={props.onOpenSide}
       onOpenPreview={props.onOpenPreview}
     />
   ) : (
@@ -2325,7 +2510,10 @@ function ObjectCard(props: {
     </div>
   );
   return (
-    <article className={`object-card ${props.selected ? "selected" : ""} ${props.object.status === "disproved" ? "disproved" : ""}`}>
+    <article
+      className={`object-card ${props.selected ? "selected" : ""} ${props.object.status === "disproved" ? "disproved" : ""}`}
+      data-object-uid={props.object.uid}
+    >
       {props.object.status === "disproved" && (
         <button className="false-banner" onClick={() => (props.object.reverseEdges.replaced_by ?? []).map((name) => props.graph.objectsByName[name]).find(Boolean) && props.onSelect(props.graph.objectsByName[(props.object.reverseEdges.replaced_by ?? [])[0]])}>
           Marked as DISPROVED - superseded by {(props.object.reverseEdges.replaced_by ?? [])[0] ?? "replacement"}
@@ -2415,7 +2603,11 @@ function DetailPanel(props: {
   }, [props.ensureBody, props.object.uid]);
 
   return (
-    <aside className="detail-panel" style={{ width: props.width, flexBasis: props.width }}>
+    <aside
+      className="detail-panel"
+      data-object-uid={props.object.uid}
+      style={{ width: props.width, flexBasis: props.width }}
+    >
       <div className="detail-head">
         <div className="detail-title-row">
           <h2>{props.object.title}</h2>
@@ -2434,6 +2626,7 @@ function DetailPanel(props: {
           <span>{props.object.importance}</span>
           {props.object.priority && <b>priority: {props.object.priority}</b>}
         </div>
+        <ObjectFactChips object={props.object} />
       </div>
       <div className="detail-section">
         <div className="detail-label">Rendered content</div>
@@ -2459,6 +2652,16 @@ function DetailPanel(props: {
         <span>name</span><code>{props.object.name}</code>
         <span>uid</span><code>{props.object.uid}</code>
         <span>path</span><code>{props.object.path}/</code>
+        {originLabel(props.object) && (
+          <>
+            <span>origin</span><code>{originLabel(props.object)}</code>
+          </>
+        )}
+        {props.object.citation && (
+          <>
+            <span>bibkey</span><code>{props.object.citation.bibkey}</code>
+          </>
+        )}
       </div>
     </aside>
   );
@@ -2567,6 +2770,7 @@ function RelationList(props: {
         <button
           key={`${row.label}-${row.target.uid}-${row.derived}`}
           className={`edge-row ${row.target.status === "open" ? "open" : ""}`}
+          data-object-uid={row.target.uid}
           onClick={(event) => handleRelationClick(event, row.target)}
           onDoubleClick={(event) => handleRelationDoubleClick(event, row.target)}
         >
@@ -2585,6 +2789,7 @@ function FullObjectPage(props: {
   body?: BodyFile[];
   ensureBody: (uid: string) => Promise<void>;
   onSelect: (object: NormalizedObject) => void;
+  onOpenSide: (object: NormalizedObject) => void;
   onOpenFull: (object: NormalizedObject) => void;
   onBack: () => void;
   onCopy: (object: NormalizedObject) => Promise<void>;
@@ -2601,7 +2806,7 @@ function FullObjectPage(props: {
     .flatMap(([label, names]) => (names ?? []).map((name) => ({ label, object: props.graph.objectsByName[name] })))
     .filter((item): item is { label: string; object: NormalizedObject } => Boolean(item.object));
   return (
-    <div className="full-page reading-shell">
+    <div className="full-page reading-shell" data-object-uid={props.object.uid}>
       <div className="breadcrumb">
         <button onClick={props.onBack}>Paper view</button>
         <span>/</span>
@@ -2622,16 +2827,17 @@ function FullObjectPage(props: {
           </button>
         </div>
       </div>
+      <ObjectFactChips object={props.object} />
       <MarkdownBody
         graph={props.graph}
         object={props.object}
         files={props.body}
-        onSelect={props.onSelect}
+        onSelect={props.onOpenSide}
         onOpenPreview={props.onOpenPreview}
       />
       <div className="context-grid">
-        <ContextColumn title="This object uses" items={uses} onOpen={props.onOpenFull} />
-        <ContextColumn title="Used by / Proved by / Blocked by" items={reverse.map((item) => item.object)} onOpen={props.onOpenFull} />
+        <ContextColumn title="This object uses" items={uses} onOpen={props.onOpenSide} onPreview={props.onOpenPreview} />
+        <ContextColumn title="Used by / Proved by / Blocked by" items={reverse.map((item) => item.object)} onOpen={props.onOpenSide} onPreview={props.onOpenPreview} />
       </div>
     </div>
   );
@@ -2683,6 +2889,7 @@ function ContextColumn(props: {
       {props.items.length === 0 ? <p className="muted">None.</p> : props.items.map((object) => (
         <button
           key={object.uid}
+          data-object-uid={object.uid}
           onClick={(event) => handleClick(event, object)}
           onDoubleClick={(event) => handleDoubleClick(event, object)}
         >
@@ -2721,6 +2928,7 @@ function ObjectOverlay(props: {
     <div className="object-overlay" onClick={props.onClose}>
       <section
         className="object-overlay-panel"
+        data-object-uid={props.object.uid}
         onClick={(event) => event.stopPropagation()}
         onDoubleClick={(event) => {
           if ((event.target as HTMLElement).closest("a, button, [data-object-name]")) return;
@@ -2742,6 +2950,7 @@ function ObjectOverlay(props: {
               <span className="status-badge" style={{ background: statusColor(props.object.status) }}>{props.object.status}</span>
             </div>
             <h1>{props.object.title}</h1>
+            <ObjectFactChips object={props.object} />
           </div>
           <MarkdownBody
             graph={props.graph}

@@ -111,6 +111,7 @@ The `uid` is the permanent identity. The `name` is the readable reference used i
 - [Quick start](wiki/guides/quick-start.md)
 - [Concepts and workflows](wiki/guides/concepts-and-workflows.md)
 - [Navigation and UI controls](wiki/guides/navigation.md)
+- [Reference Atlas and citation sources](wiki/reference/reference-atlases.md)
 - [Routes and export](wiki/reference/routes-and-export.md)
 - [Local AI workflow](wiki/guides/local-ai.md)
 - [Semi-discrete example](wiki/examples/semidiscrete-paper.md)

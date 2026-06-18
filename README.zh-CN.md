@@ -111,6 +111,7 @@ ProofAtlas/
 - [快速开始](wiki/guides/quick-start.md)
 - [核心概念与操作流程](wiki/guides/concepts-and-workflows.md)
 - [页面和跳转](wiki/guides/navigation.md)
+- [Reference Atlas 与引用来源](wiki/reference/reference-atlases.md)
 - [Route 与导出](wiki/reference/routes-and-export.md)
 - [本地 AI 工作流](wiki/guides/local-ai.md)
 - [半离散示例](wiki/examples/semidiscrete-paper.md)

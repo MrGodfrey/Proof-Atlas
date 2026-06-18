@@ -32,9 +32,9 @@ The proof of partial null controllability is [[main.proof.partial_null_control|a
 
 ## Observability Branch
 
-Observability is the analytic input underneath partial control. The proof [[main.proof.observability|expands the adjoint in low modes]], applies the imported [[main.claim.partial_discrete_lr|partial discrete Lebeau-Robbiano inequality]], and converts [[main.eq.observability_spectral_bound|the pointwise spectral bound]] into an integral observation estimate.
+Observability is the analytic input underneath partial control. The proof [[main.proof.observability|expands the adjoint in low modes]], applies the imported [[source.boyer_2010a.claim.partial_discrete_lr|partial discrete Lebeau-Robbiano inequality]], and converts [[main.eq.observability_spectral_bound|the pointwise spectral bound]] into an integral observation estimate.
 
-![[main.claim.partial_discrete_lr]]{expanded}
+![[source.boyer_2010a.claim.partial_discrete_lr]]{expanded}
 
 ## Why This Route
 

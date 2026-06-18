@@ -1,0 +1,14 @@
+uid: obj_20260618_340f34
+name: source.gao_2016a
+kind: note
+role: literature
+display_as: literature_note
+importance: background
+title: Gao 2016, one-dimensional fourth-order Lebeau-Robbiano inequality
+status: checked
+body:
+  - note.md
+summary: One-dimensional fourth-order Lebeau-Robbiano inequality source.
+provenance: external
+citation:
+  bibkey: Gao2016a

@@ -1,0 +1,14 @@
+uid: obj_20260618_8b86e0
+name: source.le_rousseau_robbiano_2020
+kind: note
+role: literature
+display_as: literature_note
+importance: background
+title: Le Rousseau and Robbiano 2020
+status: checked
+body:
+  - note.md
+summary: Bi-Laplace spectral inequality and resolvent estimate source.
+provenance: external
+citation:
+  bibkey: LeRousseau2020

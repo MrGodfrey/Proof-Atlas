@@ -1,0 +1,6 @@
+schema_version: "0.1"
+project: shared-reference-atlas
+title: Shared Reference Atlas
+default_view: views/references.md
+math_renderer: katex
+atlas_type: reference

@@ -8,7 +8,8 @@ export function atlasConfigTemplate(project = "proof-atlas-project", title = "Pr
     project,
     title,
     default_view: "views/dashboard.md",
-    math_renderer: "katex"
+    math_renderer: "katex",
+    atlas_type: "project"
   };
 }
 

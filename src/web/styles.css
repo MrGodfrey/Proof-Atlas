@@ -287,11 +287,18 @@ body.resizing-columns * { cursor: col-resize !important; }
 .card-title-block h2 { margin: 0; font: 600 1.06rem/1.32 var(--pa-serif); color: #26241f; }
 .object-card:has(.card-meta b) .card-title-block h2 { font-size: 1.14rem; }
 .object-card.disproved h2 { text-decoration: line-through; }
+.object-fact-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 0; margin-top: 8px; color: #756f65; font: 600 10.5px/1.35 var(--pa-mono); }
+.object-fact-chips span { border: 1px solid #ded8ca; background: #fbfaf7; border-radius: 4px; padding: 3px 6px; }
+.object-fact-chips code { color: #4f5d8f; font-size: 10px; }
+.object-fact-chips .trust-chip { color: #fff; border-color: transparent; }
+.trust-trusted { background: #2e7d59 !important; }
+.trust-unverified { background: #9b6a22 !important; }
+.trust-rejected { background: #a33d3d !important; }
 .card-actions { display: flex; align-items: center; gap: 8px; }
 .card-actions button, .copy-inline { cursor: pointer; color: #6b6760; border-radius: 5px; padding: 3px; display: inline-flex; align-items: center; opacity: .55; transition: opacity .12s ease, background .12s ease; }
 .card-actions button:hover, .copy-inline:hover { opacity: 1; }
 .card-actions button:hover { background: #f3f1ea; }
-.status-badge { color: #fff; border-radius: 4px; padding: 4px 7px; white-space: nowrap; font: 600 10px/1 var(--pa-mono); letter-spacing: .02em; }
+.status-badge { display: inline-flex; align-items: center; justify-content: center; color: #fff; border-radius: 4px; padding: 4px 7px; min-height: 24px; white-space: nowrap; font: 600 10px/1 var(--pa-mono); letter-spacing: .02em; }
 .chevron { transition: transform .15s ease; }
 .chevron.open { transform: rotate(180deg); }
 .blocked-banner, .false-banner { width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 16px 7px 17px; border-top: 1px solid #f3dada; background: #fbeaea; color: #c62828; cursor: pointer; text-align: left; font-weight: 500; font-size: 12px; line-height: 1.4; }
@@ -367,9 +374,9 @@ body.resizing-columns * { cursor: col-resize !important; }
 .full-title { display: grid; gap: 10px; margin-bottom: 22px; }
 .full-title h1 { margin-bottom: 0; }
 .full-title-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.full-title-actions .status-badge, .full-title-actions .copy-inline { min-width: 92px; min-height: 24px; justify-content: center; }
+.full-title-actions .status-badge, .full-title-actions .copy-inline { min-width: 92px; height: 32px; justify-content: center; }
 .copy-inline { border: 1px solid #e0ddeb; padding: 7px 9px; gap: 6px; color: #5a4fcf; font-weight: 600; font-size: 12px; opacity: 1; }
-.full-title-actions .copy-inline { border-radius: 4px; padding: 4px 7px; font: 600 10px/1 var(--pa-mono); letter-spacing: .02em; }
+.full-title-actions .copy-inline { border-radius: 4px; padding: 4px 9px; font: 600 10px/1 var(--pa-mono); letter-spacing: .02em; }
 .context-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 34px; }
 .context-column h3 { font: 700 14px/1.2 Inter, sans-serif; margin: 0 0 10px; color: #4a473f; }
 .context-column button { width: 100%; display: flex; align-items: center; gap: 9px; background: #fff; border: 1px solid #ebe8df; border-radius: 7px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; text-align: left; color: #4a473f; font-size: 12.5px; }
@@ -412,6 +419,9 @@ body.resizing-columns * { cursor: col-resize !important; }
 .command-row span:not(.status-dot) { min-width: 0; display: grid; gap: 3px; }
 .command-row b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; font: 600 13px/1.2 Inter, sans-serif; }
 .command-row small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #8a867c; font: 500 10.5px/1.2 var(--pa-mono); }
+.shortcut-row { cursor: default; }
+.shortcut-row:hover { background: transparent; color: #4a473f; }
+.shortcut-row kbd { min-width: 82px; justify-self: start; text-align: center; border: 1px solid #e4e0d4; border-bottom-color: #d3cec0; border-radius: 5px; padding: 4px 7px; color: #5a4fcf; background: #faf9f4; font: 700 10.5px/1 var(--pa-mono); }
 .command-empty { padding: 22px; color: #a8a499; font: 500 12.5px/1.45 Inter, sans-serif; }
 
 @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }

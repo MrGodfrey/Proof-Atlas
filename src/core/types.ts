@@ -173,13 +173,27 @@ export interface AtlasWorkspaceConfig {
   bib?: string[];
 }
 
+export type AtlasType = "project" | "reference";
+export type ReferenceMountMode = "readonly" | "readwrite";
+
+export interface ReferenceMountConfig {
+  id: string;
+  mode: ReferenceMountMode;
+}
+
+export interface AtlasReferencesConfig {
+  mounts: ReferenceMountConfig[];
+}
+
 export interface AtlasConfig {
   schema_version: "0.1";
   project: string;
   title: string;
   default_view: string;
   math_renderer: "katex" | "mathjax";
+  atlas_type: AtlasType;
   workspace?: AtlasWorkspaceConfig;
+  references?: AtlasReferencesConfig;
 }
 
 export interface ResolvedAtlasProject {
@@ -211,6 +225,47 @@ export interface RawObjectRecord {
   provenance?: unknown;
   tags?: unknown;
   edges?: unknown;
+  citation?: unknown;
+  source_result?: unknown;
+}
+
+export type ObjectOriginKind = "project" | "global_reference" | "mounted_project";
+
+export interface ObjectOrigin {
+  kind: ObjectOriginKind;
+  atlasRoot: string;
+  atlasId?: string;
+  objectPath: string;
+  readonly: boolean;
+}
+
+export type BibTrust = "trusted" | "unverified" | "rejected";
+
+export interface BibRegistryEntry {
+  bibkey: string;
+  trust: BibTrust;
+  file: string;
+  registryId: string;
+  registryPath: string;
+  entryType?: string;
+}
+
+export interface NormalizedBibRegistry {
+  entriesByKey: Record<string, BibRegistryEntry>;
+}
+
+export interface NormalizedCitation {
+  bibkey: string;
+  trust?: BibTrust;
+  bibfile?: string;
+  registryId?: string;
+  entryType?: string;
+}
+
+export interface SourceResultInfo {
+  parent?: string;
+  location?: string;
+  statement_fidelity?: string;
 }
 
 export interface NormalizedObject {
@@ -232,6 +287,9 @@ export interface NormalizedObject {
   path: string;
   dir: string;
   objectPath: string;
+  origin: ObjectOrigin;
+  citation?: NormalizedCitation;
+  source_result?: SourceResultInfo;
 }
 
 export interface BodyBlock {
@@ -340,7 +398,18 @@ export interface NormalizedGraph {
   views: AtlasView[];
   routeViews: AtlasRouteView[];
   problems: AtlasProblem[];
+  referenceMounts: ResolvedReferenceMount[];
+  bibRegistry: NormalizedBibRegistry;
   builtAt: string;
+}
+
+export interface ResolvedReferenceMount {
+  id: string;
+  mode: ReferenceMountMode;
+  root: string | null;
+  realRoot: string | null;
+  status: "mounted" | "missing";
+  message?: string;
 }
 
 export interface RegistryProjectEntry {

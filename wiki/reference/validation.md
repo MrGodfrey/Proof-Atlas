@@ -23,6 +23,9 @@ npm run atlas -- check --strict examples/semidiscrete
 - 非法 `status`
 - 非法 `priority`
 - 非法 `provenance`
+- 非法 `atlas_type`
+- 非法 `references.mounts`
+- 非法 `citation` 或 `source_result`
 - 非法 edge type 或 edge ref schema
 - `body` 指向不存在的 Markdown 文件
 - `edges` 指向不存在对象
@@ -39,6 +42,13 @@ npm run atlas -- check --strict examples/semidiscrete
 - view 嵌入不存在对象
 - 对象正文中出现 `![[...]]`
 - 对象正文中出现 TeX 宏定义 `\newcommand`、`\renewcommand` 或 `\def`
+- 普通项目中定义本地 `source.*` 对象
+- `source.*` 对象缺少 `citation.bibkey`
+- `citation.bibkey` 不在当前项目或挂载 Reference Atlas 的 Bib registry 中
+- Reference Atlas 挂载 id 重复或找不到本机路径
+- `bib-registry.yml` 指向不存在的 BibTeX 文件
+- 同一个 BibTeX key 出现在冲突的 trust 组中
+- 使用 `rejected` 引用来源
 
 ## 常见 warning
 
@@ -56,6 +66,23 @@ warning 不一定让普通构图失败，但会出现在网页顶部构建状态
 - `claim_uses_dependency`：claim 写了证明依赖型 `uses`；通常应移动到对应 proof 的 `uses`。
 - `needs_confirmation`：route 有多个合理 proof 候选，resolver 使用了确定性默认选择，但建议人工确认。
 - `profile_target_mismatch`：route profile 和 target role 不太匹配，例如对非 claim 对象强制使用 `proof` profile。
+- `citation_bibfile_deprecated`：对象手写了 `citation.bibfile`；BibTeX 文件应由 `bib-registry.yml` 派生。
+- `unverified_external_dependency`：proof hard-uses 未核验外部结果，需要人工确认来源可信度。
+
+## Reference Atlas 检查
+
+普通项目可以在 `atlas.yml` 声明：
+
+```yaml
+references:
+  mounts:
+    - id: shared-reference-atlas
+      mode: readonly
+```
+
+如果本机没有配置挂载路径，严格校验会报告 `missing_reference_atlas_mount`。此时系统不会继续把同一批 `source.*` 边和 Markdown 链接报成普通断链，避免一次缺少挂载产生大量噪音。
+
+挂载成功后，系统会加载 Reference Atlas 对象和 `bib-registry.yml`。`source.*` 对象必须有 `citation.bibkey`，trust 由 Bib registry 派生。`rejected` 来源不可使用；`unverified` 外部结果可以显示，但 proof hard-use 时会给 warning。
 
 ## TeX 宏检查
 
@@ -78,4 +105,5 @@ warning 不一定让普通构图失败，但会出现在网页顶部构建状态
 9. `status` 和 `kind` 组合合理。
 10. 不在对象正文中写 `![[...]]`。
 11. 不在对象正文数学环境中定义 TeX 宏。
-12. 提交前运行 `npm run atlas -- check --strict <paper-root>` 或 `npm run atlas -- check --strict <ProofAtlas path>`。
+12. 若使用 `source.*` 对象，确认 Reference Atlas 已挂载，且相关 `citation.bibkey` 在 Bib registry 中。
+13. 提交前运行 `npm run atlas -- check --strict <paper-root>` 或 `npm run atlas -- check --strict <ProofAtlas path>`。

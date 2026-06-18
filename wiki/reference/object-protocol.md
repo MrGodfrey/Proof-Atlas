@@ -34,6 +34,8 @@ edges:
       reason: The theorem statement refers to the controlled system.
   cites:
     - target: source.lue_2011
+citation:
+  bibkey: Lue2011
 ```
 
 ## 代码事实源
@@ -64,6 +66,8 @@ edges:
 | `provenance` | 否 | `internal` | 信任边界：内部、外部或导入。 |
 | `tags` | 否 | `[]` | 自由标签，当前主要供搜索和人工整理。 |
 | `edges` | 否 | `{}` | 正向关系边。 |
+| `citation` | source 对象必填 | 无 | BibTeX key；trust 由 Bib registry 派生。 |
+| `source_result` | 否 | 无 | 外部结果在来源文献中的父条目、位置和语句忠实度。 |
 
 ## `uid`
 
@@ -377,6 +381,45 @@ status: checked
 ```
 
 如果某个外部 theorem 是证明主线的接受前提，可以建成 `kind: math`, `role: claim`, `provenance: external`，并用 `cites` 指向文献 note。
+
+普通论文项目里不要新建本地 `source.*` 对象；`source.*` 命名空间保留给
+Reference Atlas。若要在当前论文引用外部文献或外部结果，把 Reference Atlas 挂载到项目，
+再用 `cites` 或 `uses` 指向其中的 `source.*` 对象。
+
+## `citation`
+
+`citation` 目前只手写 `bibkey`：
+
+```yaml
+citation:
+  bibkey: Boyer2010
+```
+
+`trust`、`bibfile`、`registryId` 和 `entryType` 由 `bib-registry.yml` 派生，不要手写进
+`object.yml`。旧对象里如果保留 `citation.bibfile`，校验会给 warning，因为 BibTeX 文件归属应由 registry 统一维护。
+
+每个 `source.*` 对象都需要 `citation.bibkey`。如果 bibkey 不在当前项目和已挂载 Reference Atlas 的 Bib registry 中，严格校验会失败。
+
+## `source_result`
+
+`source_result` 用于说明一个外部数学结果如何来自文献对象：
+
+```yaml
+source_result:
+  parent: source.boyer_2010a
+  location: Theorem 2.1
+  statement_fidelity: paraphrased
+```
+
+字段含义：
+
+| 字段 | 含义 |
+|---|---|
+| `parent` | 对应的文献 note 对象名。 |
+| `location` | 结果在文献中的位置，例如 theorem、lemma、page 或 section。 |
+| `statement_fidelity` | 语句忠实度，例如 `verbatim`、`paraphrased`、`adapted`。 |
+
+如果写了 `parent`，它必须能解析为当前图中的对象。
 
 ## `summary`
 

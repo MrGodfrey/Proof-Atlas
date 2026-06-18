@@ -23,6 +23,7 @@ wiki/
     file-layout.md
     object-protocol.md
     edges.md
+    reference-atlases.md
     routes-and-export.md
     markdown-links.md
     validation.md
@@ -50,10 +51,11 @@ wiki/
 2. [文件结构](reference/file-layout.md)
 3. [对象协议](reference/object-protocol.md)
 4. [边语义](reference/edges.md)
-5. [Route 与导出](reference/routes-and-export.md)
-6. [Markdown 链接](reference/markdown-links.md)
-7. [校验与常见错误](reference/validation.md)
-8. [LLM / local AI suggestion 工作流](reference/llm-suggestions.md)
+5. [Reference Atlas 与引用来源](reference/reference-atlases.md)
+6. [Route 与导出](reference/routes-and-export.md)
+7. [Markdown 链接](reference/markdown-links.md)
+8. [校验与常见错误](reference/validation.md)
+9. [LLM / local AI suggestion 工作流](reference/llm-suggestions.md)
 
 理解产品设计：
 

@@ -37,6 +37,13 @@
       suggestions/
 
     AGENTS.md
+
+  reference-atlas/
+    ProofAtlas/
+      atlas.yml
+      bib-registry.yml
+      objects/
+      views/
 ```
 
 ## `<workspace-root>/.gitignore`
@@ -64,11 +71,31 @@ project: semi-discrete-stochastic-control
 title: Semi-discrete stochastic controllability
 default_view: views/dashboard.md
 math_renderer: katex
+atlas_type: project
+references:
+  mounts:
+    - id: shared-reference-atlas
+      mode: readonly
 workspace:
   root: ..
   tex_main: ../main.tex
   bib:
     - ../references.bib
+```
+
+`atlas_type` 省略时默认为 `project`。普通论文项目用 `project`；可复用引用库用
+`reference`。`references.mounts` 声明当前项目依赖哪些 Reference Atlas，但不在共享
+配置里写本机绝对路径。
+
+Reference Atlas 的 `atlas.yml` 示例：
+
+```yaml
+schema_version: "0.1"
+project: shared-reference-atlas
+title: Shared Reference Atlas
+default_view: views/references.md
+math_renderer: katex
+atlas_type: reference
 ```
 
 ## `objects/`
@@ -106,9 +133,9 @@ profile: proof
 proof_choices:
   main.claim.null_controllability: main.proof.lr_iteration
 boundaries:
-  - main.claim.partial_discrete_lr
+  - source.boyer_2010a.claim.partial_discrete_lr
 representation:
-  main.claim.partial_discrete_lr: statement
+  source.boyer_2010a.claim.partial_discrete_lr: statement
 render:
   order: prerequisites_first
   show_graph: true
@@ -145,25 +172,48 @@ npm run atlas -- apply-suggestions .atlas/suggestions/null_control.yml examples/
 
 ## `.atlas/local.yml`
 
-本机路径覆盖文件，可选，不应提交到 git。它只能覆盖 workspace 路径字段：
+本机路径覆盖文件，可选，不应提交到 git。它只能覆盖 workspace 路径字段，以及
+`reference_atlases` 本机路径映射：
 
 ```yaml
 workspace:
-  root: /Users/wangyu/Overleaf/some-paper
+  root: /path/to/local/paper-copy
   tex_main: main.tex
   bib:
     - references.bib
+reference_atlases:
+  shared-reference-atlas:
+    root: ../reference-atlas/ProofAtlas
 ```
 
 不要把对象、edges、aliases、正文或项目标题放进 `local.yml`。
+
+## `bib-registry.yml`
+
+Reference Atlas 可以在根目录放 `bib-registry.yml`，把 BibTeX 文件分为
+`trusted`、`unverified` 和 `rejected`：
+
+```yaml
+schema_version: "0.1"
+trusted:
+  - id: main
+    path: references.bib
+unverified:
+  - path: unverified.bib
+rejected:
+  - path: rejected.bib
+```
+
+`source.*` 对象通过 `citation.bibkey` 指向 BibTeX key，系统从 registry 派生 trust。
+详见 [`reference-atlases.md`](reference-atlases.md)。
 
 ## `AGENTS.md`
 
 外部论文项目里的 `AGENTS.md` 不应复制 Proof Atlas 全套规则，只应指向工具仓库的绝对路径和 wiki：
 
 ```text
-Tool repository: /Users/wangyu/code/proofAtlas
-Wiki: /Users/wangyu/code/proofAtlas/wiki/README.md
+Tool repository: /path/to/Proof-Atlas
+Wiki: /path/to/Proof-Atlas/wiki/README.md
 Atlas root: <workspace-root>/ProofAtlas
 Workspace root: <workspace-root>
 ```

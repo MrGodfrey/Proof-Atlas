@@ -1,0 +1,14 @@
+uid: obj_20260611_f014
+name: source.zuazua_2005
+kind: note
+role: literature
+display_as: literature_note
+importance: background
+title: Zuazua 2005, control of finite-difference wave approximations
+status: checked
+body:
+  - note.md
+summary: Background source for numerical approximation of control systems and discrete counterexamples.
+provenance: external
+citation:
+  bibkey: Zuazua2005

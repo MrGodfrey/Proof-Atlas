@@ -21,7 +21,7 @@ related_to
 | `blocks` | issue -> object | A 阻塞 B |
 | `refines` | A -> B | A 是 B 的更精确版本 |
 | `replaces` | A -> B | A 取代 B |
-| `cites` | A -> source | A 引用文献或外部对象 B |
+| `cites` | A -> source | A 引用文献、文献 note 或外部结果 B |
 | `related_to` | A <-> B | 弱相关，不表示依赖 |
 
 ## 不写反向边
@@ -65,7 +65,9 @@ proved_by main.proof.lr_iteration
 - claim 通常写 statement context 到 `requires`，不要把证明依赖直接写在 claim 的 `uses` 上。
 - proof 和 claim 的关系通过 `proof -> proves -> claim` 表达。
 - issue 的阻塞关系用 `issue -> blocks -> object`。
-- 文献来源用 `cites`，不要把文献写成普通 `uses`。
+- 文献来源用 `cites`，不要把文献 note 写成普通 `uses`。
+- 如果 proof 实际使用 Reference Atlas 里的外部数学结果，可以 `uses -> source.<paper>.claim.<result>`；这个 source claim 应有可导出的 `statement.md`。
+- `source.*` 对象来自挂载的 Reference Atlas，普通论文项目不要本地定义。
 
 ## EdgeRef schema
 
@@ -95,3 +97,28 @@ G_dep = hard requires + hard uses
 ```
 
 `proves`、`cites`、`blocks`、`refines`、`replaces`、`related_to` 不进入 hard dependency cycle check。
+
+## 引用来源和 trust
+
+`cites` 常用于把当前对象连接到文献 note：
+
+```yaml
+edges:
+  cites:
+    - target: source.boyer_2010a
+```
+
+当 proof 直接使用外部定理时，用 `uses` 指向外部结果对象：
+
+```yaml
+edges:
+  uses:
+    - target: source.boyer_2010a.claim.partial_discrete_lr
+      strength: hard
+```
+
+严格校验会结合 Bib registry 的 trust 处理外部引用：
+
+- 使用 `rejected` 来源会报错。
+- proof hard-uses `unverified` 外部结果会给 warning。
+- proof hard-uses 外部 claim 时，该 claim 应有 `statement.md`，否则无法可靠导出 statement context。

@@ -24,9 +24,11 @@ describe("generated routes", () => {
       "main.claim.observability": "main.proof.observability",
       "main.claim.free_decay": "main.proof.free_decay"
     });
-    expect(route.nodes.map((node) => node.object.name)).toContain("main.claim.partial_discrete_lr");
-    expect(route.nodes.find((node) => node.object.name === "main.claim.partial_discrete_lr")?.decision).toBe("boundary");
-    expect(route.nodes.find((node) => node.object.name === "main.claim.partial_discrete_lr")?.inclusionClass).toBe("boundary");
+    const externalSpectralInput = route.nodes.find((node) => node.object.name === "source.boyer_2010a.claim.partial_discrete_lr");
+    expect(externalSpectralInput).toBeTruthy();
+    expect(externalSpectralInput?.object.origin.kind).toBe("global_reference");
+    expect(externalSpectralInput?.decision).toBe("boundary");
+    expect(externalSpectralInput?.inclusionClass).toBe("boundary");
     expect(route.nodes.find((node) => node.object.name === "main.proof.lr_iteration")?.inclusionClass).toBe("spine");
     expect(route.nodes.find((node) => node.object.name === "main.model.forward_semidiscrete_system")?.inclusionClass).toBe("vocabulary");
     expect(route.nodes.filter((node) => node.inclusionClass === "spine")).toHaveLength(11);

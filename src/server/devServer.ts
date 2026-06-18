@@ -78,21 +78,29 @@ export async function startDevServer(initialProject: ResolvedAtlasProject | unde
 
   const watchProject = () => {
     if (!currentProject) return;
-    const projectRoot = currentProject.atlasRoot;
-    watcher = chokidar.watch([
-      path.join(projectRoot, "atlas.yml"),
-      path.join(projectRoot, "objects"),
-      path.join(projectRoot, "views"),
-      path.join(projectRoot, ".atlas", "aliases.yml"),
-      path.join(projectRoot, ".atlas", "local.yml")
-    ], {
+    const roots = [
+      currentProject.atlasRoot,
+      ...(graph?.referenceMounts ?? [])
+        .filter((mount) => mount.status === "mounted" && mount.root)
+        .map((mount) => mount.root as string)
+    ];
+    const watchPaths = roots.flatMap((rootPath) => [
+      path.join(rootPath, "atlas.yml"),
+      path.join(rootPath, "bib-registry.yml"),
+      path.join(rootPath, "objects"),
+      path.join(rootPath, "views"),
+      path.join(rootPath, ".atlas", "aliases.yml"),
+      path.join(rootPath, ".atlas", "local.yml")
+    ]);
+    watcher = chokidar.watch(watchPaths, {
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 50 }
     });
     watcher.on("all", (eventName, changedPath) => {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        void rebuild(`${eventName} ${path.relative(projectRoot, changedPath)}`);
+        const ownerRoot = roots.find((rootPath) => changedPath.startsWith(rootPath)) ?? currentProject!.atlasRoot;
+        void rebuild(`${eventName} ${path.relative(ownerRoot, changedPath)}`);
       }, 180);
     });
   };

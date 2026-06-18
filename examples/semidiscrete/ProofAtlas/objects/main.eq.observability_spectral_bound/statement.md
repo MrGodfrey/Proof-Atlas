@@ -1,4 +1,4 @@
-For all $t\in[0,T]$, the adjoint expansion in [[main.proof.observability]] and [[main.claim.partial_discrete_lr]] give
+For all $t\in[0,T]$, the adjoint expansion in [[main.proof.observability]] and [[source.boyer_2010a.claim.partial_discrete_lr]] give
 
 $$
 \begin{aligned}

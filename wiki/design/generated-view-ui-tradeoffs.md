@@ -59,7 +59,7 @@ npm run atlas -- route main.claim.null_controllability \
   examples/semidiscrete/ProofAtlas \
   --profile proof \
   --representation main.setting.discrete_mesh=statement \
-  --boundary main.claim.partial_discrete_lr \
+  --boundary source.boyer_2010a.claim.partial_discrete_lr \
   --save views/null_controllability.route.yml
 ```
 

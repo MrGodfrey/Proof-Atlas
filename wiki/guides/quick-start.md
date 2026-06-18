@@ -11,6 +11,7 @@ npm install
 ```bash
 npm run atlas -- check examples/semidiscrete
 npm run atlas -- check --strict examples/semidiscrete
+npm run atlas -- check --strict examples/reference-atlas/ProofAtlas
 ```
 
 ## 启动本地工作台
@@ -43,24 +44,24 @@ npm run atlas -- dev semi-discrete-stochastic-control
 
 `npm run atlas -- dev` 不传路径且当前目录不是项目时，会打开最近项目首页。
 
-## 打开外部实验论文
+## 打开自己的论文项目
 
-Overleaf 实验论文的 paper root 是：
+如果论文目录是：
 
 ```text
-/Users/wangyu/code/overleaf/semidiscrete-fourth-order-stochastic-parabolic-spectral-controllability
+/path/to/my-paper
 ```
 
-当前这台机器上它已经包含 `ProofAtlas/atlas.yml`，可以直接打开：
+并且它已经包含 `ProofAtlas/atlas.yml`，可以直接打开：
 
 ```bash
-npm run atlas -- dev /Users/wangyu/code/overleaf/semidiscrete-fourth-order-stochastic-parabolic-spectral-controllability --port 3217
+npm run atlas -- dev /path/to/my-paper --port 3217
 ```
 
-对其他还没有 `ProofAtlas/atlas.yml` 的论文路径，先运行一次：
+对还没有 `ProofAtlas/atlas.yml` 的论文路径，先运行一次：
 
 ```bash
-npm run atlas -- init /Users/wangyu/code/overleaf/semidiscrete-fourth-order-stochastic-parabolic-spectral-controllability
+npm run atlas -- init /path/to/my-paper
 ```
 
 然后在 `ProofAtlas/atlas.yml` 里配置：
@@ -74,6 +75,17 @@ workspace:
 ```
 
 网页已经打开某个项目时，用顶部 `Open` 按钮输入这个 paper root 即可切换；也可以 `Ctrl+C` 停掉当前 server 后重新运行 `npm run atlas -- dev <paper-root>`。
+
+如果项目引用共享 Reference Atlas，在 `ProofAtlas/atlas.yml` 中声明挂载：
+
+```yaml
+references:
+  mounts:
+    - id: shared-reference-atlas
+      mode: readonly
+```
+
+本机路径放入 `ProofAtlas/.atlas/local.yml` 或 `~/.proof-atlas/reference-atlases.yml`，不要提交本机绝对路径。详见 [Reference Atlas 与引用来源](../reference/reference-atlases.md)。
 
 ## 常用 CLI
 

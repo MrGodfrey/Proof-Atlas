@@ -29,6 +29,13 @@ export function formatLocalReference(
     ...(graph.workspace.texMain ? [`tex_main: ${displayPath(graph, graph.workspace.texMain)}`] : []),
     `uid: ${object.uid}`,
     `name: ${object.name}`,
+    ...(object.origin.kind === "project" ? [] : [`origin: ${object.origin.kind}`]),
+    ...(object.origin.atlasId ? [`origin_atlas: ${object.origin.atlasId}`] : []),
+    ...(object.origin.kind === "project" ? [] : [`origin_atlas_root: ${object.origin.atlasRoot}`]),
+    ...(object.citation ? [
+      `citation_bibkey: ${object.citation.bibkey}`,
+      ...(object.citation.trust ? [`citation_trust: ${object.citation.trust}`] : [])
+    ] : []),
     `path: ${object.objectPath}`,
     "body:",
     ...object.body.map((item) => `  - ${item}`)

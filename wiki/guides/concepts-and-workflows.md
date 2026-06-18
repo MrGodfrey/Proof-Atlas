@@ -215,7 +215,7 @@ npm run atlas -- route main.claim.null_controllability \
 npm run atlas -- route main.claim.null_controllability \
   examples/semidiscrete/ProofAtlas \
   --profile proof \
-  --boundary main.claim.partial_discrete_lr
+  --boundary source.boyer_2010a.claim.partial_discrete_lr
 ```
 
 4. 保存为 route 文件：

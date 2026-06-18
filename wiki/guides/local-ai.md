@@ -7,8 +7,8 @@
 ```text
 ProofAtlas local reference
 project: semi-discrete-stochastic-control
-atlas_root: /Users/wangyu/code/proofAtlas/examples/semidiscrete/ProofAtlas
-workspace_root: /Users/wangyu/code/proofAtlas/examples/semidiscrete
+atlas_root: /path/to/Proof-Atlas/examples/semidiscrete/ProofAtlas
+workspace_root: /path/to/Proof-Atlas/examples/semidiscrete
 uid: obj_20260611_a7f3
 name: main.claim.null_controllability
 path: objects/main.claim.null_controllability/object.yml
@@ -21,6 +21,18 @@ body:
 ```text
 tex_main: main.tex
 ```
+
+如果对象来自挂载的 Reference Atlas，还会出现 origin 和 citation 信息：
+
+```text
+origin: global_reference
+origin_atlas: shared-reference-atlas
+origin_atlas_root: /path/to/Proof-Atlas/examples/reference-atlas/ProofAtlas
+citation_bibkey: Boyer2010
+citation_trust: trusted
+```
+
+本地 AI 应把 `origin: global_reference` 视为外部引用对象；只读挂载不应直接改写，除非用户明确要求编辑对应 Reference Atlas。
 
 ## 定位规则
 

@@ -30,11 +30,11 @@ proof_choices:
   main.claim.partial_null_control: main.proof.partial_null_control
 
 boundaries:
-  - main.claim.partial_discrete_lr
+  - source.boyer_2010a.claim.partial_discrete_lr
 
 representation:
   main.claim.null_controllability: full
-  main.claim.partial_discrete_lr: statement
+  source.boyer_2010a.claim.partial_discrete_lr: statement
 
 render:
   order: prerequisites_first
@@ -184,7 +184,7 @@ proof_choices:
 ```yaml
 boundaries:
   - source.lue_2011
-  - main.claim.partial_discrete_lr
+  - source.boyer_2010a.claim.partial_discrete_lr
 ```
 
 boundary 对象仍然会进入 route 节点列表，并在 Markdown 导出中带有说明：
@@ -329,8 +329,8 @@ npm run atlas -- route views/null_controllability.route.yml \
 npm run atlas -- route main.claim.null_controllability \
   examples/semidiscrete/ProofAtlas \
   --profile proof \
-  --boundary main.claim.partial_discrete_lr \
-  --representation main.claim.partial_discrete_lr=statement \
+  --boundary source.boyer_2010a.claim.partial_discrete_lr \
+  --representation source.boyer_2010a.claim.partial_discrete_lr=statement \
   --save views/null_controllability.route.yml
 ```
 

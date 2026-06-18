@@ -1,0 +1,22 @@
+uid: obj_20260618_bhll01
+name: source.boyer_2010a.claim.partial_discrete_lr
+kind: math
+role: claim
+display_as: lemma
+importance: background
+provenance: external
+title: Partial discrete Lebeau-Robbiano inequality from Boyer--Hubert--Le Rousseau 2010a
+status: checked
+body:
+  - statement.md
+summary: Low-frequency partial discrete spectral inequality imported from Boyer--Hubert--Le Rousseau 2010a.
+citation:
+  bibkey: Boyer2010a
+source_result:
+  parent: source.boyer_2010a
+  location: "Spectral inequality consequence of the arbitrary-dimensional discrete Carleman estimate; exact theorem/equation location needs audit."
+  statement_fidelity: needs_check
+edges:
+  cites:
+    - target: source.boyer_2010a
+      reason: "This result is recalled from the cited paper."

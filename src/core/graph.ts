@@ -28,20 +28,29 @@ import type {
   AtlasView,
   AtlasWorkspaceConfig,
   BodyFile,
+  BibRegistryEntry,
+  BibTrust,
   EdgeRef,
   EdgeMap,
   EdgeType,
   IssuePriority,
+  NormalizedBibRegistry,
+  NormalizedCitation,
   NormalizedGraph,
   NormalizedObject,
   NormalizedWorkspace,
+  ObjectOrigin,
   ObjectKind,
   ObjectRole,
   RawObjectRecord,
+  ReferenceMountConfig,
+  ReferenceMountMode,
   RepresentationMode,
   ResolvedAtlasProject,
+  ResolvedReferenceMount,
   RouteProfile,
   RouteView,
+  SourceResultInfo,
   ViewItem
 } from "./types";
 import { addUniqueEdge, edgeTargets, hardEdgeTargets } from "./edgeUtils";
@@ -53,6 +62,7 @@ import {
 import { pathExists, relativePosix, isPlainObject, listFilesRecursive, toPosixPath } from "./pathUtils";
 import { problem, resetProblemCounter } from "./problems";
 import { expandHome, resolveAtlasProject } from "./project";
+import { proofAtlasHome } from "./registry";
 import { renderMarkdownBlock, splitMarkdownBlocks } from "./render";
 import { readYamlFile } from "./yaml";
 
@@ -136,6 +146,68 @@ function normalizeWorkspace(raw: unknown, problems: AtlasProblem[], sourcePath: 
   return Object.keys(workspace).length ? workspace : undefined;
 }
 
+function normalizeReferences(raw: unknown, problems: AtlasProblem[], sourcePath: string): AtlasConfig["references"] | undefined {
+  if (raw === undefined) return undefined;
+  if (!isPlainObject(raw)) {
+    problems.push(problem({
+      severity: "error",
+      code: "invalid_references",
+      message: "references must be a YAML mapping.",
+      path: sourcePath,
+      strict: true
+    }));
+    return undefined;
+  }
+  const mountsRaw = raw.mounts;
+  if (mountsRaw === undefined) return { mounts: [] };
+  if (!Array.isArray(mountsRaw)) {
+    problems.push(problem({
+      severity: "error",
+      code: "invalid_reference_mounts",
+      message: "references.mounts must be a list.",
+      path: sourcePath,
+      strict: true
+    }));
+    return { mounts: [] };
+  }
+  const mounts: ReferenceMountConfig[] = [];
+  for (const item of mountsRaw) {
+    if (!isPlainObject(item)) {
+      problems.push(problem({
+        severity: "error",
+        code: "invalid_reference_mount",
+        message: "references.mounts entries must be YAML mappings.",
+        path: sourcePath,
+        strict: true
+      }));
+      continue;
+    }
+    if (typeof item.id !== "string" || !item.id.trim()) {
+      problems.push(problem({
+        severity: "error",
+        code: "invalid_reference_mount_id",
+        message: "references.mounts entries need a non-empty id.",
+        path: sourcePath,
+        strict: true
+      }));
+      continue;
+    }
+    const mode: ReferenceMountMode = item.mode === "readwrite" ? "readwrite" : "readonly";
+    if (item.mode !== undefined && item.mode !== "readonly" && item.mode !== "readwrite") {
+      problems.push(problem({
+        severity: "error",
+        code: "invalid_reference_mount_mode",
+        message: "references.mounts.mode must be readonly or readwrite.",
+        path: sourcePath,
+        target: item.id,
+        strict: true
+      }));
+    }
+    mounts.push({ id: item.id.trim(), mode });
+  }
+  return { mounts };
+}
+
 function mergeLocalConfig(config: AtlasConfig, raw: unknown, problems: AtlasProblem[]): AtlasConfig {
   if (!isPlainObject(raw)) {
     problems.push(problem({
@@ -147,13 +219,13 @@ function mergeLocalConfig(config: AtlasConfig, raw: unknown, problems: AtlasProb
     }));
     return config;
   }
-  const allowed = new Set(["workspace"]);
+  const allowed = new Set(["workspace", "reference_atlases"]);
   for (const key of Object.keys(raw)) {
     if (allowed.has(key)) continue;
     problems.push(problem({
       severity: "error",
       code: "invalid_local_override",
-      message: `.atlas/local.yml may not override ${key}; only workspace path fields are local.`,
+      message: `.atlas/local.yml may not override ${key}; only workspace path fields and reference_atlases are local.`,
       path: ".atlas/local.yml",
       strict: true
     }));
@@ -183,6 +255,155 @@ function resolveWorkspaceFile(atlasRoot: string, workspaceRoot: string | null, v
   return path.resolve(atlasRoot, expanded);
 }
 
+function defaultReferenceAtlasRegistryPath(): string {
+  return path.join(proofAtlasHome(), "reference-atlases.yml");
+}
+
+function resolveConfigPath(baseRoot: string, value: string): string {
+  const expanded = expandHome(value);
+  return path.isAbsolute(expanded) ? path.normalize(expanded) : path.resolve(baseRoot, expanded);
+}
+
+function safeMapping(value: unknown): Record<string, unknown> | undefined {
+  return isPlainObject(value) ? value : undefined;
+}
+
+async function safeRealpath(filePath: string): Promise<string> {
+  try {
+    return await fs.realpath(filePath);
+  } catch {
+    return filePath;
+  }
+}
+
+async function readReferenceAtlasMappings(project: ResolvedAtlasProject, problems: AtlasProblem[]): Promise<Record<string, string>> {
+  const mappings: Record<string, string> = {};
+  const readMappings = async (filePath: string, baseRoot: string, required: boolean) => {
+    if (!(await pathExists(filePath))) {
+      if (required) {
+        problems.push(problem({
+          severity: "error",
+          code: "missing_reference_atlas_registry",
+          message: `Reference atlas registry does not exist: ${filePath}.`,
+          path: filePath,
+          strict: true
+        }));
+      }
+      return;
+    }
+    const raw = await readYamlFile<unknown>(filePath);
+    const rootMap = safeMapping(raw)?.reference_atlases;
+    if (rootMap === undefined) return;
+    if (!isPlainObject(rootMap)) {
+      problems.push(problem({
+        severity: "error",
+        code: "invalid_reference_atlas_registry",
+        message: "reference_atlases must be a YAML mapping of id to root.",
+        path: filePath,
+        strict: true
+      }));
+      return;
+    }
+    for (const [id, entry] of Object.entries(rootMap)) {
+      const root = typeof entry === "string"
+        ? entry
+        : isPlainObject(entry) && typeof entry.root === "string"
+          ? entry.root
+          : undefined;
+      if (!root?.trim()) {
+        problems.push(problem({
+          severity: "error",
+          code: "invalid_reference_atlas_root",
+          message: `reference_atlases.${id}.root must be a non-empty string.`,
+          path: filePath,
+          target: id,
+          strict: true
+        }));
+        continue;
+      }
+      mappings[id] = resolveConfigPath(baseRoot, root);
+    }
+  };
+
+  await readMappings(defaultReferenceAtlasRegistryPath(), process.cwd(), false);
+  if (project.localConfigPath) await readMappings(project.localConfigPath, project.atlasRoot, false);
+  return mappings;
+}
+
+async function findNearbyReferenceAtlas(projectRoot: string, id: string): Promise<string | undefined> {
+  let cursor = projectRoot;
+  for (let depth = 0; depth < 4; depth += 1) {
+    const candidate = path.join(cursor, "reference-atlas", "ProofAtlas");
+    const configPath = path.join(candidate, "atlas.yml");
+    if (await pathExists(configPath)) {
+      const raw = await readYamlFile<unknown>(configPath);
+      if (isPlainObject(raw) && raw.project === id) return candidate;
+    }
+    const parent = path.dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
+  return undefined;
+}
+
+async function resolveReferenceMounts(
+  project: ResolvedAtlasProject,
+  config: AtlasConfig,
+  problems: AtlasProblem[]
+): Promise<ResolvedReferenceMount[]> {
+  const requested = config.references?.mounts ?? [];
+  if (requested.length === 0) return [];
+  const mappings = await readReferenceAtlasMappings(project, problems);
+  const mounts: ResolvedReferenceMount[] = [];
+  const seen = new Set<string>();
+  for (const mount of requested) {
+    if (seen.has(mount.id)) {
+      problems.push(problem({
+        severity: "error",
+        code: "duplicate_reference_atlas_mount",
+        message: `Reference atlas mount ${mount.id} is declared more than once.`,
+        path: "atlas.yml",
+        target: mount.id,
+        strict: true
+      }));
+      continue;
+    }
+    seen.add(mount.id);
+    const root = mappings[mount.id] ?? await findNearbyReferenceAtlas(project.atlasRoot, mount.id);
+    if (!root) {
+      const message = `Project declares reference atlas ${mount.id}, but no local path mapping was found.`;
+      problems.push(problem({
+        severity: "error",
+        code: "missing_reference_atlas_mount",
+        message,
+        path: "atlas.yml",
+        target: mount.id,
+        strict: true
+      }));
+      mounts.push({ id: mount.id, mode: mount.mode, root: null, realRoot: null, status: "missing", message });
+      continue;
+    }
+    const atlasFile = path.join(root, "atlas.yml");
+    if (!(await pathExists(atlasFile))) {
+      const message = `Reference atlas ${mount.id} does not contain atlas.yml at ${root}.`;
+      problems.push(problem({
+        severity: "error",
+        code: "missing_reference_atlas_mount",
+        message,
+        path: "atlas.yml",
+        target: mount.id,
+        strict: true
+      }));
+      mounts.push({ id: mount.id, mode: mount.mode, root, realRoot: await safeRealpath(root), status: "missing", message });
+      continue;
+    }
+    const realRoot = await safeRealpath(root);
+    if (realRoot === project.realAtlasRoot) continue;
+    mounts.push({ id: mount.id, mode: mount.mode, root, realRoot, status: "mounted" });
+  }
+  return mounts;
+}
+
 function normalizeWorkspacePaths(project: ResolvedAtlasProject, config: AtlasConfig): NormalizedWorkspace {
   const root = config.workspace?.root
     ? resolvePathFromAtlas(project.atlasRoot, config.workspace.root)
@@ -202,7 +423,8 @@ async function loadConfig(project: ResolvedAtlasProject, problems: AtlasProblem[
     project: typeof raw?.project === "string" ? raw.project : fallbackProject,
     title: typeof raw?.title === "string" ? raw.title : fallbackProject,
     default_view: normalizeDefaultView(raw?.default_view),
-    math_renderer: raw?.math_renderer === "mathjax" ? "mathjax" : "katex"
+    math_renderer: raw?.math_renderer === "mathjax" ? "mathjax" : "katex",
+    atlas_type: raw?.atlas_type === "reference" ? "reference" : "project"
   };
 
   if (!isPlainObject(raw)) {
@@ -237,6 +459,8 @@ async function loadConfig(project: ResolvedAtlasProject, problems: AtlasProblem[
   }
   const workspace = normalizeWorkspace(raw.workspace, problems, "atlas.yml");
   if (workspace) config.workspace = workspace;
+  const references = normalizeReferences(raw.references, problems, "atlas.yml");
+  if (references) config.references = references;
 
   if (raw.math_renderer && !["katex", "mathjax"].includes(String(raw.math_renderer))) {
     problems.push(problem({
@@ -247,13 +471,36 @@ async function loadConfig(project: ResolvedAtlasProject, problems: AtlasProblem[
       strict: true
     }));
   }
+  if (raw.atlas_type !== undefined && !["project", "reference"].includes(String(raw.atlas_type))) {
+    problems.push(problem({
+      severity: "error",
+      code: "invalid_atlas_type",
+      message: "atlas_type must be project or reference.",
+      path: "atlas.yml",
+      strict: true
+    }));
+  }
   if (!project.localConfigPath) return config;
   return mergeLocalConfig(config, await readYamlFile<Record<string, unknown>>(project.localConfigPath), problems);
 }
 
-async function loadRawObjects(root: string): Promise<Array<{ file: string; data: RawObjectRecord }>> {
+interface LoadRoot {
+  root: string;
+  originKind: ObjectOrigin["kind"];
+  atlasId?: string;
+  readonly: boolean;
+}
+
+interface RawObjectLoadRecord {
+  file: string;
+  data: RawObjectRecord;
+  loadRoot: LoadRoot;
+}
+
+async function loadRawObjects(loadRoot: LoadRoot): Promise<RawObjectLoadRecord[]> {
+  const root = loadRoot.root;
   const objectsDir = path.join(root, "objects");
-  const out: Array<{ file: string; data: RawObjectRecord }> = [];
+  const out: RawObjectLoadRecord[] = [];
   let entries;
   try {
     entries = await fs.readdir(objectsDir, { withFileTypes: true });
@@ -264,10 +511,122 @@ async function loadRawObjects(root: string): Promise<Array<{ file: string; data:
     if (!entry.isDirectory()) continue;
     const objectFile = path.join(objectsDir, entry.name, "object.yml");
     if (!(await pathExists(objectFile))) continue;
-    out.push({ file: objectFile, data: await readYamlFile<RawObjectRecord>(objectFile) });
+    out.push({ file: objectFile, data: await readYamlFile<RawObjectRecord>(objectFile), loadRoot });
   }
   out.sort((a, b) => a.file.localeCompare(b.file));
   return out;
+}
+
+function normalizeCitation(
+  raw: unknown,
+  objectPath: string,
+  objectName: string,
+  objectUid: string,
+  problems: AtlasProblem[]
+): NormalizedCitation | undefined {
+  if (raw === undefined) return undefined;
+  if (!isPlainObject(raw)) {
+    problems.push(problem({
+      severity: "error",
+      code: "invalid_citation",
+      message: "citation must be a YAML mapping.",
+      path: objectPath,
+      objectName,
+      objectUid,
+      strict: true
+    }));
+    return undefined;
+  }
+  if (typeof raw.bibfile === "string") {
+    problems.push(problem({
+      severity: "warning",
+      code: "citation_bibfile_deprecated",
+      message: "citation.bibfile is derived from the bib registry; do not keep it as a long-term object fact.",
+      path: objectPath,
+      objectName,
+      objectUid,
+      strict: false
+    }));
+  }
+  if (typeof raw.bibkey !== "string" || !raw.bibkey.trim()) {
+    problems.push(problem({
+      severity: "error",
+      code: "invalid_citation_bibkey",
+      message: "citation.bibkey must be a non-empty string.",
+      path: objectPath,
+      objectName,
+      objectUid,
+      strict: true
+    }));
+    return undefined;
+  }
+  return { bibkey: raw.bibkey.trim() };
+}
+
+function normalizeSourceResult(
+  raw: unknown,
+  objectPath: string,
+  objectName: string,
+  objectUid: string,
+  problems: AtlasProblem[]
+): SourceResultInfo | undefined {
+  if (raw === undefined) return undefined;
+  if (!isPlainObject(raw)) {
+    problems.push(problem({
+      severity: "error",
+      code: "invalid_source_result",
+      message: "source_result must be a YAML mapping.",
+      path: objectPath,
+      objectName,
+      objectUid,
+      strict: true
+    }));
+    return undefined;
+  }
+  const out: SourceResultInfo = {};
+  if (raw.parent !== undefined) {
+    if (typeof raw.parent === "string" && raw.parent.trim()) out.parent = raw.parent.trim();
+    else {
+      problems.push(problem({
+        severity: "error",
+        code: "invalid_source_result_parent",
+        message: "source_result.parent must be a non-empty object name.",
+        path: objectPath,
+        objectName,
+        objectUid,
+        strict: true
+      }));
+    }
+  }
+  if (raw.location !== undefined) {
+    if (typeof raw.location === "string" && raw.location.trim()) out.location = raw.location.trim();
+    else {
+      problems.push(problem({
+        severity: "error",
+        code: "invalid_source_result_location",
+        message: "source_result.location must be a non-empty string.",
+        path: objectPath,
+        objectName,
+        objectUid,
+        strict: true
+      }));
+    }
+  }
+  if (raw.statement_fidelity !== undefined) {
+    if (typeof raw.statement_fidelity === "string" && raw.statement_fidelity.trim()) out.statement_fidelity = raw.statement_fidelity.trim();
+    else {
+      problems.push(problem({
+        severity: "error",
+        code: "invalid_source_result_statement_fidelity",
+        message: "source_result.statement_fidelity must be a non-empty string.",
+        path: objectPath,
+        objectName,
+        objectUid,
+        strict: true
+      }));
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 function normalizeEdges(
@@ -386,10 +745,11 @@ function normalizeEdges(
 function normalizeObject(
   raw: RawObjectRecord,
   file: string,
-  root: string,
+  loadRoot: LoadRoot,
   index: number,
   problems: AtlasProblem[]
 ): NormalizedObject {
+  const root = loadRoot.root;
   const objectPath = relativePosix(root, file);
   const dir = relativePosix(root, path.dirname(file));
   const folderName = path.basename(path.dirname(file));
@@ -589,6 +949,13 @@ function normalizeObject(
 
   const tags = asStringArray(raw.tags) ?? [];
   const summary = asString(raw.summary);
+  const origin: ObjectOrigin = {
+    kind: loadRoot.originKind,
+    atlasRoot: root,
+    ...(loadRoot.atlasId ? { atlasId: loadRoot.atlasId } : {}),
+    objectPath,
+    readonly: loadRoot.readonly
+  };
 
   return {
     uid,
@@ -608,21 +975,28 @@ function normalizeObject(
     reverseEdges: {},
     path: dir,
     dir,
-    objectPath
+    objectPath,
+    origin,
+    citation: normalizeCitation(raw.citation, objectPath, name, uid, problems),
+    source_result: normalizeSourceResult(raw.source_result, objectPath, name, uid, problems)
   };
 }
 
-async function loadAliases(root: string, graph: Pick<NormalizedGraph, "objectsByUid" | "objectsByName">, problems: AtlasProblem[]): Promise<Record<string, string>> {
+async function loadAliases(loadRoot: LoadRoot, graph: Pick<NormalizedGraph, "objectsByUid" | "objectsByName">, problems: AtlasProblem[]): Promise<Record<string, string>> {
+  const root = loadRoot.root;
   const aliasesPath = path.join(root, ".atlas", "aliases.yml");
   if (!(await pathExists(aliasesPath))) return {};
   const raw = await readYamlFile<Record<string, unknown>>(aliasesPath);
+  const aliasesProblemPath = loadRoot.originKind === "project"
+    ? ".atlas/aliases.yml"
+    : `${loadRoot.atlasId ?? "mounted"}:.atlas/aliases.yml`;
   const aliases: Record<string, string> = {};
   if (!isPlainObject(raw)) {
     problems.push(problem({
       severity: "error",
       code: "invalid_aliases",
       message: ".atlas/aliases.yml must be a YAML mapping of old name to uid.",
-      path: ".atlas/aliases.yml",
+      path: aliasesProblemPath,
       strict: true
     }));
     return aliases;
@@ -633,7 +1007,7 @@ async function loadAliases(root: string, graph: Pick<NormalizedGraph, "objectsBy
         severity: "error",
         code: "invalid_alias_value",
         message: `Alias ${key} must point to a uid string.`,
-        path: ".atlas/aliases.yml",
+        path: aliasesProblemPath,
         target: key,
         strict: true
       }));
@@ -645,7 +1019,7 @@ async function loadAliases(root: string, graph: Pick<NormalizedGraph, "objectsBy
         severity: "error",
         code: "alias_key_conflicts_name",
         message: `Alias key ${key} conflicts with an existing object name.`,
-        path: ".atlas/aliases.yml",
+        path: aliasesProblemPath,
         target: key,
         strict: true
       }));
@@ -655,10 +1029,36 @@ async function loadAliases(root: string, graph: Pick<NormalizedGraph, "objectsBy
         severity: "error",
         code: "alias_to_missing_uid",
         message: `Alias ${key} points to missing uid ${value}.`,
-        path: ".atlas/aliases.yml",
+        path: aliasesProblemPath,
         target: key,
         strict: true
       }));
+    }
+  }
+  return aliases;
+}
+
+async function loadAllAliases(
+  roots: LoadRoot[],
+  graph: Pick<NormalizedGraph, "objectsByUid" | "objectsByName">,
+  problems: AtlasProblem[]
+): Promise<Record<string, string>> {
+  const aliases: Record<string, string> = {};
+  for (const loadRoot of roots) {
+    const next = await loadAliases(loadRoot, graph, problems);
+    for (const [key, value] of Object.entries(next)) {
+      if (aliases[key] && aliases[key] !== value) {
+        problems.push(problem({
+          severity: "error",
+          code: "duplicate_alias",
+          message: `Alias ${key} is declared by multiple atlases.`,
+          path: loadRoot.originKind === "project" ? ".atlas/aliases.yml" : `${loadRoot.atlasId ?? "mounted"}:.atlas/aliases.yml`,
+          target: key,
+          strict: true
+        }));
+        continue;
+      }
+      aliases[key] = value;
     }
   }
   return aliases;
@@ -692,6 +1092,14 @@ function resolveObject(graph: NormalizedGraph, target: string): NormalizedObject
   return graph.objectsByName[target] ?? graph.objectsByUid[target] ?? graph.objectsByUid[graph.aliases[target]];
 }
 
+function hasMissingReferenceMount(graph: NormalizedGraph): boolean {
+  return graph.referenceMounts.some((mount) => mount.status === "missing");
+}
+
+function shouldSuppressMissingReferenceTarget(graph: NormalizedGraph, target: string): boolean {
+  return target.startsWith("source.") && hasMissingReferenceMount(graph);
+}
+
 function validateAndResolveEdges(graph: NormalizedGraph): void {
   for (const object of graph.objects) {
     const resolvedEdges: EdgeMap = {};
@@ -699,18 +1107,32 @@ function validateAndResolveEdges(graph: NormalizedGraph): void {
       for (const ref of refs) {
         const resolved = resolveObject(graph, ref.target);
         if (!resolved) {
+          if (!shouldSuppressMissingReferenceTarget(graph, ref.target)) {
+            graph.problems.push(problem({
+              severity: "error",
+              code: "missing_edge_target",
+              message: `${object.name} has ${edgeType} edge to missing object ${ref.target}.`,
+              path: object.objectPath,
+              objectUid: object.uid,
+              objectName: object.name,
+              target: ref.target,
+              strict: true
+            }));
+          }
+          addUniqueEdge(resolvedEdges, edgeType, ref);
+          continue;
+        }
+        if (object.origin.kind === "global_reference" && resolved.origin.kind === "project") {
           graph.problems.push(problem({
             severity: "error",
-            code: "missing_edge_target",
-            message: `${object.name} has ${edgeType} edge to missing object ${ref.target}.`,
+            code: "reference_atlas_depends_on_project",
+            message: `${object.name} is mounted from a global reference atlas and must not depend on project object ${resolved.name}.`,
             path: object.objectPath,
             objectUid: object.uid,
             objectName: object.name,
-            target: ref.target,
+            target: resolved.name,
             strict: true
           }));
-          addUniqueEdge(resolvedEdges, edgeType, ref);
-          continue;
         }
         if (graph.aliases[ref.target]) {
           graph.problems.push(problem({
@@ -755,7 +1177,7 @@ function validateBodyPathsAndContent(graph: NormalizedGraph): void {
   for (const object of graph.objects) {
     for (const bodyPath of object.body) {
       const posix = toPosixPath(bodyPath);
-      const full = path.join(graph.root, object.dir, bodyPath);
+      const full = path.join(object.origin.atlasRoot, object.dir, bodyPath);
       if (path.isAbsolute(bodyPath) || posix.includes("../") || !posix.endsWith(".md")) {
         graph.problems.push(problem({
           severity: "error",
@@ -776,8 +1198,8 @@ function validateBodyPathsAndContent(graph: NormalizedGraph): void {
 async function validateBodyContent(graph: NormalizedGraph): Promise<void> {
   for (const object of graph.objects) {
     for (const bodyPath of object.body) {
-      const full = path.join(graph.root, object.dir, bodyPath);
-      const relativeBodyPath = relativePosix(graph.root, full);
+      const full = path.join(object.origin.atlasRoot, object.dir, bodyPath);
+      const relativeBodyPath = relativePosix(object.origin.atlasRoot, full);
       if (!(await pathExists(full))) {
         graph.problems.push(problem({
           severity: "error",
@@ -818,16 +1240,18 @@ async function validateBodyContent(graph: NormalizedGraph): Promise<void> {
         }
         const resolved = resolveObject(graph, ref.target);
         if (!resolved) {
-          graph.problems.push(problem({
-            severity: "error",
-            code: "missing_markdown_link",
-            message: `Markdown link points to missing object ${ref.target}.`,
-            path: relativeBodyPath,
-            objectUid: object.uid,
-            objectName: object.name,
-            target: ref.target,
-            strict: true
-          }));
+          if (!shouldSuppressMissingReferenceTarget(graph, ref.target)) {
+            graph.problems.push(problem({
+              severity: "error",
+              code: "missing_markdown_link",
+              message: `Markdown link points to missing object ${ref.target}.`,
+              path: relativeBodyPath,
+              objectUid: object.uid,
+              objectName: object.name,
+              target: ref.target,
+              strict: true
+            }));
+          }
         } else if (graph.aliases[ref.target]) {
           graph.problems.push(problem({
             severity: "warning",
@@ -912,15 +1336,17 @@ function parseViewItems(graph: NormalizedGraph, source: string, viewPath: string
       }
       const resolved = resolveObject(graph, ref.target);
       if (!resolved) {
-        graph.problems.push(problem({
-          severity: "error",
-          code: "missing_embed",
-          message: `View embeds missing object ${ref.target}.`,
-          path: viewPath,
-          viewPath,
-          target: ref.target,
-          strict: true
-        }));
+        if (!shouldSuppressMissingReferenceTarget(graph, ref.target)) {
+          graph.problems.push(problem({
+            severity: "error",
+            code: "missing_embed",
+            message: `View embeds missing object ${ref.target}.`,
+            path: viewPath,
+            viewPath,
+            target: ref.target,
+            strict: true
+          }));
+        }
       } else if (graph.aliases[ref.target]) {
         graph.problems.push(problem({
           severity: "warning",
@@ -949,15 +1375,17 @@ function parseViewItems(graph: NormalizedGraph, source: string, viewPath: string
   for (const ref of parseMarkdownReferences(source).filter((ref) => ref.kind === "link")) {
     const resolved = resolveObject(graph, ref.target);
     if (!resolved) {
-      graph.problems.push(problem({
-        severity: "error",
-        code: "missing_markdown_link",
-        message: `View link points to missing object ${ref.target}.`,
-        path: viewPath,
-        viewPath,
-        target: ref.target,
-        strict: true
-      }));
+      if (!shouldSuppressMissingReferenceTarget(graph, ref.target)) {
+        graph.problems.push(problem({
+          severity: "error",
+          code: "missing_markdown_link",
+          message: `View link points to missing object ${ref.target}.`,
+          path: viewPath,
+          viewPath,
+          target: ref.target,
+          strict: true
+        }));
+      }
     }
   }
   return items;
@@ -1335,8 +1763,197 @@ function statusComboWarning(object: NormalizedObject): string | undefined {
   return undefined;
 }
 
+const BIB_TRUST_GROUPS: BibTrust[] = ["trusted", "unverified", "rejected"];
+
+function parseBibEntries(source: string): Array<{ bibkey: string; entryType: string }> {
+  const entries: Array<{ bibkey: string; entryType: string }> = [];
+  const pattern = /@([A-Za-z]+)\s*\{\s*([^,\s]+)\s*,/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(source)) !== null) {
+    entries.push({ entryType: match[1], bibkey: match[2] });
+  }
+  return entries;
+}
+
+function normalizeBibRegistryFiles(raw: unknown, trust: BibTrust, registryPath: string, problems: AtlasProblem[]): Array<{ id: string; path: string }> {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) {
+    problems.push(problem({
+      severity: "error",
+      code: "invalid_bib_registry_group",
+      message: `bib-registry.yml ${trust} must be a list.`,
+      path: registryPath,
+      strict: true
+    }));
+    return [];
+  }
+  return raw.flatMap((item, index) => {
+    if (typeof item === "string" && item.trim()) {
+      return [{ id: `${trust}-${index + 1}`, path: item.trim() }];
+    }
+    if (!isPlainObject(item) || typeof item.path !== "string" || !item.path.trim()) {
+      problems.push(problem({
+        severity: "error",
+        code: "invalid_bib_registry_file",
+        message: `bib-registry.yml ${trust} entries need a path.`,
+        path: registryPath,
+        strict: true
+      }));
+      return [];
+    }
+    return [{
+      id: typeof item.id === "string" && item.id.trim() ? item.id.trim() : `${trust}-${index + 1}`,
+      path: item.path.trim()
+    }];
+  });
+}
+
+async function loadBibRegistryForRoot(loadRoot: LoadRoot, problems: AtlasProblem[]): Promise<NormalizedBibRegistry> {
+  const registryPath = path.join(loadRoot.root, "bib-registry.yml");
+  const entriesByKey: Record<string, BibRegistryEntry> = {};
+  if (!(await pathExists(registryPath))) return { entriesByKey };
+  const raw = await readYamlFile<unknown>(registryPath);
+  if (!isPlainObject(raw)) {
+    problems.push(problem({
+      severity: "error",
+      code: "invalid_bib_registry",
+      message: "bib-registry.yml must be a YAML mapping.",
+      path: "bib-registry.yml",
+      strict: true
+    }));
+    return { entriesByKey };
+  }
+  for (const trust of BIB_TRUST_GROUPS) {
+    for (const fileRef of normalizeBibRegistryFiles(raw[trust], trust, registryPath, problems)) {
+      const filePath = resolveConfigPath(loadRoot.root, fileRef.path);
+      if (!(await pathExists(filePath))) {
+        problems.push(problem({
+          severity: "error",
+          code: "missing_bib_registry_file",
+          message: `Bib registry file ${fileRef.path} does not exist.`,
+          path: "bib-registry.yml",
+          target: fileRef.id,
+          strict: true
+        }));
+        continue;
+      }
+      const source = await fs.readFile(filePath, "utf8");
+      for (const entry of parseBibEntries(source)) {
+        const existing = entriesByKey[entry.bibkey];
+        if (existing && existing.trust !== trust) {
+          problems.push(problem({
+            severity: "error",
+            code: "duplicate_bibkey_trust",
+            message: `BibTeX key ${entry.bibkey} appears in both ${existing.trust} and ${trust}.`,
+            path: "bib-registry.yml",
+            target: entry.bibkey,
+            strict: true
+          }));
+          continue;
+        }
+        if (existing) {
+          continue;
+        }
+        entriesByKey[entry.bibkey] = {
+          bibkey: entry.bibkey,
+          trust,
+          file: filePath,
+          registryId: loadRoot.atlasId ?? "project",
+          registryPath,
+          entryType: entry.entryType
+        };
+      }
+    }
+  }
+  return { entriesByKey };
+}
+
+async function loadCompositeBibRegistry(loadRoots: LoadRoot[], problems: AtlasProblem[]): Promise<NormalizedBibRegistry> {
+  const entriesByKey: Record<string, BibRegistryEntry> = {};
+  for (const loadRoot of loadRoots) {
+    const registry = await loadBibRegistryForRoot(loadRoot, problems);
+    for (const [bibkey, entry] of Object.entries(registry.entriesByKey)) {
+      const existing = entriesByKey[bibkey];
+      if (existing && existing.trust !== entry.trust) {
+        problems.push(problem({
+          severity: "error",
+          code: "duplicate_bibkey_trust",
+          message: `BibTeX key ${bibkey} appears with conflicting trust in mounted registries.`,
+          path: entry.registryPath,
+          target: bibkey,
+          strict: true
+        }));
+        continue;
+      }
+      entriesByKey[bibkey] = existing ?? entry;
+    }
+  }
+  return { entriesByKey };
+}
+
+function applyCitationRegistry(graph: NormalizedGraph): void {
+  for (const object of graph.objects) {
+    if (!object.citation) continue;
+    const entry = graph.bibRegistry.entriesByKey[object.citation.bibkey];
+    if (!entry) {
+      graph.problems.push(problem({
+        severity: "error",
+        code: "missing_citation_bibkey",
+        message: `${object.name} cites BibTeX key ${object.citation.bibkey}, but that key is not in the mounted bib registry.`,
+        path: object.objectPath,
+        objectUid: object.uid,
+        objectName: object.name,
+        target: object.citation.bibkey,
+        strict: true
+      }));
+      continue;
+    }
+    object.citation = {
+      bibkey: object.citation.bibkey,
+      trust: entry.trust,
+      bibfile: entry.file,
+      registryId: entry.registryId,
+      entryType: entry.entryType
+    };
+  }
+}
+
 function lintGraph(graph: NormalizedGraph): void {
   for (const object of graph.objects) {
+    if (object.name.startsWith("source.") && object.origin.kind === "project" && graph.config.atlas_type !== "reference") {
+      graph.problems.push(problem({
+        severity: "error",
+        code: "local_source_namespace_forbidden",
+        message: `${object.name} is a local source.* object; source.* is reserved for mounted Reference Atlas objects.`,
+        path: object.objectPath,
+        objectUid: object.uid,
+        objectName: object.name,
+        strict: true
+      }));
+    }
+    if (object.name.startsWith("source.") && !object.citation) {
+      graph.problems.push(problem({
+        severity: "error",
+        code: "missing_citation",
+        message: `${object.name} needs citation.bibkey so trust can be derived from the bib registry.`,
+        path: object.objectPath,
+        objectUid: object.uid,
+        objectName: object.name,
+        strict: true
+      }));
+    }
+    if (object.source_result?.parent && !graph.objectsByName[object.source_result.parent]) {
+      graph.problems.push(problem({
+        severity: "error",
+        code: "missing_source_result_parent",
+        message: `${object.name} declares source_result.parent ${object.source_result.parent}, but it does not exist.`,
+        path: object.objectPath,
+        objectUid: object.uid,
+        objectName: object.name,
+        target: object.source_result.parent,
+        strict: true
+      }));
+    }
     const combo = statusComboWarning(object);
     if (combo) {
       graph.problems.push(problem({
@@ -1417,6 +2034,53 @@ function lintGraph(graph: NormalizedGraph): void {
         }));
       }
     }
+    for (const edgeType of EDGE_TYPES) {
+      for (const targetName of edgeTargets(object.edges[edgeType])) {
+        const target = graph.objectsByName[targetName];
+        if (target?.citation?.trust === "rejected") {
+          graph.problems.push(problem({
+            severity: "error",
+            code: "rejected_citation_usage",
+            message: `${object.name} ${edgeType} rejected reference ${target.name}.`,
+            path: object.objectPath,
+            objectUid: object.uid,
+            objectName: object.name,
+            target: target.name,
+            strict: true
+          }));
+        }
+      }
+    }
+    if (object.kind === "math" && ["proof", "proof_fragment"].includes(object.role)) {
+      for (const targetName of hardEdgeTargets(object.edges.uses)) {
+        const target = graph.objectsByName[targetName];
+        if (!target?.name.startsWith("source.")) continue;
+        if (target.kind === "math" && target.role === "claim" && !target.body.includes("statement.md")) {
+          graph.problems.push(problem({
+            severity: "error",
+            code: "missing_external_statement",
+            message: `${target.name} is hard-used by ${object.name} but has no statement.md.`,
+            path: target.objectPath,
+            objectUid: target.uid,
+            objectName: target.name,
+            target: object.name,
+            strict: true
+          }));
+        }
+        if (target.citation?.trust === "unverified") {
+          graph.problems.push(problem({
+            severity: "warning",
+            code: "unverified_external_dependency",
+            message: `${object.name} hard-uses unverified external result ${target.name}.`,
+            path: object.objectPath,
+            objectUid: object.uid,
+            objectName: object.name,
+            target: target.name,
+            strict: true
+          }));
+        }
+      }
+    }
   }
 
   const adjacency = new Map<string, string[]>();
@@ -1468,8 +2132,25 @@ export async function buildGraph(projectInput?: string | ResolvedAtlasProject): 
   const problems: AtlasProblem[] = [];
   const config = await loadConfig(project, problems);
   const workspace = normalizeWorkspacePaths(project, config);
-  const rawObjects = await loadRawObjects(root);
-  if (rawObjects.length === 0) {
+  const referenceMounts = await resolveReferenceMounts(project, config, problems);
+  const projectLoadRoot: LoadRoot = {
+    root,
+    originKind: "project",
+    readonly: false
+  };
+  const mountedLoadRoots: LoadRoot[] = referenceMounts
+    .filter((mount): mount is ResolvedReferenceMount & { root: string } => mount.status === "mounted" && Boolean(mount.root))
+    .map((mount) => ({
+      root: mount.root,
+      originKind: "global_reference",
+      atlasId: mount.id,
+      readonly: mount.mode === "readonly"
+    }));
+  const loadRoots = [projectLoadRoot, ...mountedLoadRoots];
+  const rawObjectsByRoot = await Promise.all(loadRoots.map((loadRoot) => loadRawObjects(loadRoot)));
+  const rawObjects = rawObjectsByRoot.flat();
+  const projectObjectCount = rawObjects.filter((record) => record.loadRoot.originKind === "project").length;
+  if (projectObjectCount === 0) {
     problems.push(problem({
       severity: "error",
       code: "missing_objects",
@@ -1478,10 +2159,11 @@ export async function buildGraph(projectInput?: string | ResolvedAtlasProject): 
       strict: true
     }));
   }
-  const objects = rawObjects.map((record, index) => normalizeObject(record.data, record.file, root, index, problems));
+  const objects = rawObjects.map((record, index) => normalizeObject(record.data, record.file, record.loadRoot, index, problems));
   duplicateProblems(objects, problems);
   const objectsByUid = Object.fromEntries(objects.map((object) => [object.uid, object]));
   const objectsByName = Object.fromEntries(objects.map((object) => [object.name, object]));
+  const bibRegistry = await loadCompositeBibRegistry(loadRoots, problems);
   const graph: NormalizedGraph = {
     root,
     atlasRoot: root,
@@ -1497,9 +2179,12 @@ export async function buildGraph(projectInput?: string | ResolvedAtlasProject): 
     views: [],
     routeViews: [],
     problems,
+    referenceMounts,
+    bibRegistry,
     builtAt: new Date().toISOString()
   };
-  graph.aliases = await loadAliases(root, graph, problems);
+  graph.aliases = await loadAllAliases(loadRoots, graph, problems);
+  applyCitationRegistry(graph);
   validateBodyPathsAndContent(graph);
   validateAndResolveEdges(graph);
   deriveReverseEdges(graph);
@@ -1518,7 +2203,7 @@ export async function buildBodyFiles(graph: NormalizedGraph, object: NormalizedO
   const resolve = (name: string) => resolveObject(graph, name);
   const files: BodyFile[] = [];
   for (const bodyPath of object.body) {
-    const full = path.join(graph.root, object.dir, bodyPath);
+    const full = path.join(object.origin.atlasRoot, object.dir, bodyPath);
     if (!(await pathExists(full))) {
       files.push({ file: bodyPath, blocks: [] });
       continue;

@@ -1,0 +1,14 @@
+uid: obj_20260611_f011
+name: source.lue_2011
+kind: note
+role: literature
+display_as: literature_note
+importance: background
+title: Lu 2011, controllability of forward stochastic heat equations
+status: checked
+body:
+  - note.md
+summary: Continuous stochastic heat equation null controllability with control on the drift.
+provenance: external
+citation:
+  bibkey: Lue2011
