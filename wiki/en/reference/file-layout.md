@@ -1,0 +1,220 @@
+# File Layout
+
+Each Proof Atlas project is a `ProofAtlas/` directory, usually under a paper workspace root. The paper directory is `workspace_root`; `ProofAtlas/` is `atlas_root` and the source of truth.
+
+Recommended structure:
+
+```text
+<workspace-root>/
+  main.tex
+  references.bib
+  figures/
+  .gitignore
+  AGENTS.md
+
+  ProofAtlas/
+    atlas.yml
+
+    objects/
+      main.claim.null_controllability/
+        object.yml
+        statement.md
+
+      main.proof.lr_iteration/
+        object.yml
+        proof.md
+
+    views/
+      dashboard.md
+      paper.md
+      proof_map.md
+      null_controllability.route.yml
+
+    .atlas/
+      aliases.yml
+      local.yml
+      cache/
+      suggestions/
+
+    AGENTS.md
+
+  reference-atlas/
+    ProofAtlas/
+      atlas.yml
+      bib-registry.yml
+      objects/
+      views/
+```
+
+## `<workspace-root>/.gitignore`
+
+`npm run atlas -- init <workspace-root>` and `npm run atlas -- doctor <workspace-root>` make sure the paper root `.gitignore` contains local Proof Atlas rules:
+
+```gitignore
+# Proof Atlas local files.
+ProofAtlas/.atlas/local.yml
+ProofAtlas/.atlas/cache/
+ProofAtlas/.atlas/suggestions/
+```
+
+`local.yml` can contain local absolute paths and should not be committed. `cache/` is runtime cache, not project truth. `suggestions/` stores pending LLM / local AI suggestions and is ignored by default.
+
+## `atlas.yml`
+
+Project-level configuration:
+
+```yaml
+schema_version: "0.1"
+project: semi-discrete-stochastic-control
+title: Semi-discrete stochastic controllability
+default_view: views/dashboard.md
+math_renderer: katex
+atlas_type: project
+references:
+  mounts:
+    - id: shared-reference-atlas
+      mode: readonly
+workspace:
+  root: ..
+  tex_main: ../main.tex
+  bib:
+    - ../references.bib
+```
+
+When omitted, `atlas_type` defaults to `project`. Ordinary paper projects use `project`; reusable citation libraries use `reference`. `references.mounts` declares which Reference Atlases this project depends on, but shared config should not contain local absolute paths.
+
+Reference Atlas example:
+
+```yaml
+schema_version: "0.1"
+project: shared-reference-atlas
+title: Shared Reference Atlas
+default_view: views/references.md
+math_renderer: katex
+atlas_type: reference
+```
+
+## `objects/`
+
+Each object has its own directory:
+
+```text
+objects/main.claim.null_controllability/
+  object.yml
+  statement.md
+```
+
+`object.yml` stores metadata and dependency relations. Markdown files store the body.
+
+## `views/`
+
+Markdown Views are human-authored reading entries and embed objects with `![[...]]`.
+
+```markdown
+# Dashboard
+
+![[main.problem.control_question]]{expanded}
+![[main.claim.null_controllability]]{expanded}
+```
+
+Generated Views use `*.route.yml` to save a resolver recipe, not a mathematical object:
+
+```yaml
+schema_version: "0.1"
+uid: view_20260618_null_controllability
+type: route
+title: Why null controllability holds
+target: main.claim.null_controllability
+profile: proof
+proof_choices:
+  main.claim.null_controllability: main.proof.lr_iteration
+boundaries:
+  - source.boyer_2010a.claim.partial_discrete_lr
+representation:
+  source.boyer_2010a.claim.partial_discrete_lr: statement
+render:
+  order: prerequisites_first
+  show_graph: true
+  show_status: true
+  order_hints:
+    - main.setting.probability_and_spaces
+    - main.claim.null_controllability
+```
+
+For route schema, profile behavior, and export rules, see [`routes-and-export.md`](routes-and-export.md).
+
+Common commands:
+
+```bash
+npm run atlas -- route main.claim.null_controllability examples/semidiscrete/ProofAtlas --profile proof --save views/null_controllability.route.yml
+npm run atlas -- export views/null_controllability.route.yml examples/semidiscrete/ProofAtlas --format markdown
+```
+
+## `.atlas/suggestions/`
+
+LLM or local AI output is first saved as a pending suggestion set, not as object-graph truth.
+
+```bash
+npm run atlas -- suggest examples/semidiscrete/ProofAtlas --route views/null_controllability.route.yml --output .atlas/suggestions/null_control.yml
+npm run atlas -- apply-suggestions .atlas/suggestions/null_control.yml examples/semidiscrete/ProofAtlas --accept <suggestion-id>
+```
+
+`apply-suggestions` requires an explicit `--accept`. See [`llm-suggestions.md`](llm-suggestions.md).
+
+## `.atlas/aliases.yml`
+
+Stores old-name-to-`uid` mappings after object renames. Do not edit manually in normal use; use `npm run atlas -- rename`.
+
+## `.atlas/local.yml`
+
+Optional local path override file. Do not commit it. It can only override workspace path fields and `reference_atlases` local path mappings:
+
+```yaml
+workspace:
+  root: /path/to/local/paper-copy
+  tex_main: main.tex
+  bib:
+    - references.bib
+reference_atlases:
+  shared-reference-atlas:
+    root: ../reference-atlas/ProofAtlas
+```
+
+Do not put objects, edges, aliases, body text, or project titles in `local.yml`.
+
+## `bib-registry.yml`
+
+A Reference Atlas can put `bib-registry.yml` at its root to group BibTeX files by trust:
+
+```yaml
+schema_version: "0.1"
+trusted:
+  - id: main
+    path: references.bib
+unverified:
+  - path: unverified.bib
+rejected:
+  - path: rejected.bib
+```
+
+`source.*` objects refer to BibTeX keys through `citation.bibkey`; trust is derived from the registry. See [`reference-atlases.md`](reference-atlases.md).
+
+## `AGENTS.md`
+
+An external paper project's `AGENTS.md` should not copy all Proof Atlas rules. It should point to the tool repository and wiki:
+
+```text
+Tool repository: /path/to/Proof-Atlas
+Wiki: /path/to/Proof-Atlas/wiki/en/README.md
+Atlas root: <workspace-root>/ProofAtlas
+Workspace root: <workspace-root>
+```
+
+Recommended locations:
+
+```text
+<workspace-root>/AGENTS.md
+<workspace-root>/ProofAtlas/AGENTS.md
+```
+
+This lets AI find the same canonical rules whether it starts from the paper root or inside `ProofAtlas/`, without spreading duplicated rule text across projects.

@@ -147,6 +147,10 @@ ProofAtlas/
 - [本地 AI 工作流](wiki/guides/local-ai.md)
 - [半离散示例](wiki/examples/semidiscrete-paper.md)
 
+## 本地 AI 使用提示
+
+不需要先人工逐页读完整个维基再开始改项目。把相关维基链接直接发给本地 AI；如果要改某个具体对象，再附上网页里复制的 `Copy local AI reference`。本地 AI 可以直接读取仓库文件，按协议页操作，做小范围修改，并运行 `npm run atlas -- check --strict <project>` 校验。
+
 ## 开发
 
 ```bash

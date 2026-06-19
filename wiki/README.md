@@ -1,5 +1,7 @@
 # Proof Atlas Wiki
 
+[English wiki](en/README.md)
+
 Proof Atlas 是一个本地、文件驱动的数学对象图工作台：Markdown 写正文，YAML 写对象元数据和依赖关系，本地网页负责浏览、跳转、渐进披露、校验问题展示和复制本地 AI 可定位的对象引用。
 
 当前完整示例位于：
@@ -18,6 +20,7 @@ wiki/
     navigation.md
     concepts-and-workflows.md
     local-ai.md
+    open-source-release.md
   reference/
     projects-and-paths.md
     file-layout.md
@@ -63,6 +66,10 @@ wiki/
 2. [核心概念与操作流程](guides/concepts-and-workflows.md)
 3. [Generated View UI 取舍](design/generated-view-ui-tradeoffs.md)
 4. [拆分粒度建议](examples/splitting-guidelines.md)
+
+发布到开源仓库：
+
+1. [开源仓库发布与 Demo 验证](guides/open-source-release.md)
 
 ## 常用命令
 

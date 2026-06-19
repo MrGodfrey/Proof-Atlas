@@ -2,7 +2,7 @@
 
 **Proof Atlas is a local-first workbench for mathematical research: write proofs in Markdown, describe the proof graph in YAML, and browse the whole project as a clickable atlas.**
 
-[中文 README](README.zh-CN.md) · [Wiki](wiki/README.md) · [Hosted demo](https://proof-atlas-demo.pages.dev) · [Example project](examples/semidiscrete/ProofAtlas)
+[中文 README](README.zh-CN.md) · [English wiki](wiki/en/README.md) · [Hosted demo](https://proof-atlas-demo.pages.dev) · [Example project](examples/semidiscrete/ProofAtlas)
 
 **Try the live demo:** [https://proof-atlas-demo.pages.dev](https://proof-atlas-demo.pages.dev)
 
@@ -138,14 +138,18 @@ The `uid` is the permanent identity. The `name` is the readable reference used i
 
 ## Documentation
 
-- [Wiki home](wiki/README.md)
-- [Quick start](wiki/guides/quick-start.md)
-- [Concepts and workflows](wiki/guides/concepts-and-workflows.md)
-- [Navigation and UI controls](wiki/guides/navigation.md)
-- [Reference Atlas and citation sources](wiki/reference/reference-atlases.md)
-- [Routes and export](wiki/reference/routes-and-export.md)
-- [Local AI workflow](wiki/guides/local-ai.md)
-- [Semi-discrete example](wiki/examples/semidiscrete-paper.md)
+- [Wiki home](wiki/en/README.md)
+- [Quick start](wiki/en/guides/quick-start.md)
+- [Concepts and workflows](wiki/en/guides/concepts-and-workflows.md)
+- [Navigation and UI controls](wiki/en/guides/navigation.md)
+- [Reference Atlas and citation sources](wiki/en/reference/reference-atlases.md)
+- [Routes and export](wiki/en/reference/routes-and-export.md)
+- [Local AI workflow](wiki/en/guides/local-ai.md)
+- [Semi-discrete example](wiki/en/examples/semidiscrete-paper.md)
+
+## Local AI Guidance
+
+You do not need to read the whole wiki manually before asking for project edits. Give your local AI agent the relevant wiki link, plus the `Copy local AI reference` text from the UI when you have a specific object. The agent can read the repository files directly, follow the protocol pages, make scoped edits, and run `npm run atlas -- check --strict <project>`.
 
 ## Development
 
