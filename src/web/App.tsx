@@ -41,6 +41,12 @@ import type {
 } from "../core/types";
 
 type BodyCache = Record<string, BodyFile[]>;
+type ReferenceSelection = {
+  file: string;
+  block: string;
+  kind: BodyFile["blocks"][number]["kind"];
+  excerpt: string;
+};
 type AppState =
   | { mode: "loading" }
   | { mode: "launcher"; projects: RegistryProjectListItem[] }
@@ -95,6 +101,66 @@ const STATUS_OPTIONS: ObjectStatus[] = [
   "obsolete",
   "archived"
 ];
+const STATIC_DEMO_MODE = import.meta.env.VITE_PROOF_ATLAS_DEMO === "1";
+
+type StaticDemoData = {
+  graph: NormalizedGraph;
+  bodies: BodyCache;
+};
+
+let staticDemoDataPromise: Promise<StaticDemoData> | null = null;
+
+function staticDemoDataUrl(): string {
+  return `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}demo-data.json`;
+}
+
+async function loadStaticDemoData(): Promise<StaticDemoData> {
+  staticDemoDataPromise ??= fetch(staticDemoDataUrl(), { cache: "no-store" }).then(async (response) => {
+    if (!response.ok) throw new Error(`Unable to load demo data: ${response.status}`);
+    return response.json() as Promise<StaticDemoData>;
+  });
+  return staticDemoDataPromise;
+}
+
+function displayDemoPath(graph: NormalizedGraph, filePath: string): string {
+  if (!graph.workspace.root) return filePath;
+  const root = graph.workspace.root.replaceAll("\\", "/").replace(/\/+$/, "");
+  const normalized = filePath.replaceAll("\\", "/");
+  if (normalized === root) return ".";
+  return normalized.startsWith(`${root}/`) ? normalized.slice(root.length + 1) : filePath;
+}
+
+function formatDemoReference(graph: NormalizedGraph, object: NormalizedObject, selection?: ReferenceSelection): string {
+  const lines = [
+    "ProofAtlas local reference",
+    `project: ${graph.config.project}`,
+    `atlas_root: ${graph.atlasRoot}`,
+    `workspace_root: ${graph.workspace.root ?? ""}`,
+    ...(graph.workspace.texMain ? [`tex_main: ${displayDemoPath(graph, graph.workspace.texMain)}`] : []),
+    `uid: ${object.uid}`,
+    `name: ${object.name}`,
+    ...(object.origin.kind === "project" ? [] : [`origin: ${object.origin.kind}`]),
+    ...(object.origin.atlasId ? [`origin_atlas: ${object.origin.atlasId}`] : []),
+    ...(object.origin.kind === "project" ? [] : [`origin_atlas_root: ${object.origin.atlasRoot}`]),
+    ...(object.citation ? [
+      `citation_bibkey: ${object.citation.bibkey}`,
+      ...(object.citation.trust ? [`citation_trust: ${object.citation.trust}`] : [])
+    ] : []),
+    `path: ${object.objectPath}`,
+    "body:",
+    ...object.body.map((item) => `  - ${item}`)
+  ];
+  if (selection) {
+    lines.push(
+      "selection:",
+      `  file: ${selection.file}`,
+      `  block: ${selection.block}`,
+      `  kind: ${selection.kind}`,
+      `  excerpt: ${JSON.stringify(selection.excerpt)}`
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
 
 function defaultDetailWidth(): number {
   const availableWidth = window.innerWidth - DEFAULT_LEFT_WIDTH;
@@ -426,7 +492,7 @@ function LinkedProse(props: {
   return <div className={className} {...handlers}>{props.children}</div>;
 }
 
-function getSelectionForReference(): { file: string; block: string; kind: BodyFile["blocks"][number]["kind"]; excerpt: string } | undefined {
+function getSelectionForReference(): ReferenceSelection | undefined {
   const selection = window.getSelection();
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) return undefined;
   const range = selection.getRangeAt(0);
@@ -513,6 +579,12 @@ export default function App() {
   const scrollWriteFrame = useRef<number | null>(null);
 
   const refreshState = useCallback(async () => {
+    if (STATIC_DEMO_MODE) {
+      const data = await loadStaticDemoData();
+      setBodyCache(data.bodies);
+      setAppState({ mode: "project", graph: data.graph });
+      return;
+    }
     const response = await fetch("/api/state", { cache: "no-store" });
     setAppState(await response.json() as AppState);
   }, []);
@@ -551,8 +623,8 @@ export default function App() {
       setRoute(parseRoute());
     };
     window.addEventListener("popstate", onPop);
-    const events = new EventSource("/api/events");
-    events.addEventListener("build", (event) => {
+    const events = STATIC_DEMO_MODE ? undefined : new EventSource("/api/events");
+    events?.addEventListener("build", (event) => {
       const data = JSON.parse((event as MessageEvent).data) as { type: string; problemCount?: number };
       setBuildFlash(data.type === "rebuilt" || data.type === "project_opened" ? `Rebuilt · ${data.problemCount ?? 0} problems` : "Rebuild failed");
       setTimeout(() => setBuildFlash(null), 1800);
@@ -561,7 +633,7 @@ export default function App() {
     });
     return () => {
       window.removeEventListener("popstate", onPop);
-      events.close();
+      events?.close();
     };
   }, [refreshState]);
 
@@ -754,6 +826,11 @@ export default function App() {
 
   const ensureBody = useCallback(async (uid: string) => {
     if (bodyCache[uid]) return;
+    if (STATIC_DEMO_MODE) {
+      const data = await loadStaticDemoData();
+      setBodyCache((cache) => ({ ...cache, [uid]: data.bodies[uid] ?? [] }));
+      return;
+    }
     const response = await fetch(`/api/object/${encodeURIComponent(uid)}/body`, { cache: "no-store" });
     if (!response.ok) return;
     const data = await response.json() as { files: BodyFile[] };
@@ -929,20 +1006,28 @@ export default function App() {
 
   const copyReference = useCallback(async (object: NormalizedObject) => {
     const selection = getSelectionForReference();
-    const response = await fetch("/api/reference", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ uid: object.uid, selection })
-    });
-    const data = await response.json() as { text: string };
-    await navigator.clipboard?.writeText(data.text).catch(() => undefined);
+    let text: string;
+    if (STATIC_DEMO_MODE) {
+      if (!graph) return;
+      text = formatDemoReference(graph, object, selection);
+    } else {
+      const response = await fetch("/api/reference", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid: object.uid, selection })
+      });
+      const data = await response.json() as { text: string };
+      text = data.text;
+    }
+    await navigator.clipboard?.writeText(text).catch(() => undefined);
     setCopiedUid(object.uid);
-    setToast({ title: "Copied local reference", text: data.text });
+    setToast({ title: "Copied local reference", text });
     setTimeout(() => setCopiedUid(null), 1500);
     setTimeout(() => setToast(null), 3600);
-  }, []);
+  }, [graph]);
 
   const openProjectFromLauncher = useCallback(async (input: string): Promise<string | undefined> => {
+    if (STATIC_DEMO_MODE) return "The hosted demo is read-only and uses the bundled example atlas.";
     const response = await fetch("/api/open", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1014,6 +1099,7 @@ export default function App() {
           if (object) selectObject(object);
         }}
         onSwitchProject={openProjectFromLauncher}
+        staticDemo={STATIC_DEMO_MODE}
       />
       <div className="main-row">
         {leftOpen && (
@@ -1326,6 +1412,7 @@ function TopBar(props: {
   setKindFilter: (value: Set<ObjectKind>) => void;
   onProblemClick: (problem: AtlasProblem) => void;
   onSwitchProject: (input: string) => Promise<string | undefined>;
+  staticDemo: boolean;
 }) {
   const buildColor = props.buildState === "ok" ? "#2E7D32" : props.buildState === "warning" ? "#B8860B" : "#C62828";
   const buildLabel = props.buildState === "ok" ? "Build OK" : props.buildState === "warning" ? `${props.graph.problems.length} problem(s)` : "Build error";
@@ -1347,15 +1434,19 @@ function TopBar(props: {
       <span className="current-view" title={props.currentLabel}>{props.currentLabel}</span>
       <div className="top-spacer" />
       {props.buildFlash && <span className="build-flash">{props.buildFlash}</span>}
-      <ProjectSwitcher
-        open={props.projectOpen}
-        setOpen={props.setProjectOpen}
-        onSwitchProject={props.onSwitchProject}
-        onBeforeOpen={() => {
-          props.setFilterOpen(false);
-          props.setBuildOpen(false);
-        }}
-      />
+      {props.staticDemo ? (
+        <span className="demo-chip">Cloudflare demo</span>
+      ) : (
+        <ProjectSwitcher
+          open={props.projectOpen}
+          setOpen={props.setProjectOpen}
+          onSwitchProject={props.onSwitchProject}
+          onBeforeOpen={() => {
+            props.setFilterOpen(false);
+            props.setBuildOpen(false);
+          }}
+        />
+      )}
       <div className="top-popover-anchor">
         <button className={`toolbar-button ${props.filterOpen ? "active" : ""}`} onClick={() => {
           props.setFilterOpen(!props.filterOpen);

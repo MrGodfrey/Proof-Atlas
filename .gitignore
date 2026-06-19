@@ -40,3 +40,4 @@
 # Node / Vite outputs.
 node_modules/
 dist/
+public/demo-data.json

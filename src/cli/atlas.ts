@@ -9,7 +9,7 @@ import {
   NAME_PATTERN,
   UID_PATTERN
 } from "../core/constants";
-import { buildGraph, findObject } from "../core/graph";
+import { buildBodyFiles, buildGraph, findObject } from "../core/graph";
 import { exportRoute, createSnapshot, type ExportFormat } from "../core/contextExporter";
 import { edgeTargets } from "../core/edgeUtils";
 import { parseMarkdownReferences, rewriteMarkdownObjectNames } from "../core/markdownRefs";
@@ -531,6 +531,70 @@ export async function commandExport(routeFile: string, project: string | undefin
   }
 }
 
+function compactDemoPath(repoRoot: string, value: string): string {
+  if (!path.isAbsolute(value)) return value.split(path.sep).join("/");
+  const relative = path.relative(repoRoot, value);
+  if (!relative.startsWith("..") && !path.isAbsolute(relative)) return relative ? relative.split(path.sep).join("/") : ".";
+  return value.split(path.sep).join("/");
+}
+
+function compactDemoGraphPaths(graph: Awaited<ReturnType<typeof buildGraph>>, repoRoot: string): Awaited<ReturnType<typeof buildGraph>> {
+  const demoGraph = JSON.parse(JSON.stringify(graph)) as Awaited<ReturnType<typeof buildGraph>>;
+  const compact = (value: string) => compactDemoPath(repoRoot, value);
+  const compactNullable = (value: string | null) => value === null ? null : compact(value);
+
+  demoGraph.root = compact(demoGraph.root);
+  demoGraph.atlasRoot = compact(demoGraph.atlasRoot);
+  demoGraph.workspaceRoot = compactNullable(demoGraph.workspaceRoot);
+  demoGraph.configPath = compact(demoGraph.configPath);
+  demoGraph.localConfigPath = compactNullable(demoGraph.localConfigPath);
+  demoGraph.workspace.root = compactNullable(demoGraph.workspace.root);
+  demoGraph.workspace.texMain = compactNullable(demoGraph.workspace.texMain);
+  demoGraph.workspace.bib = demoGraph.workspace.bib.map((item) => compact(item));
+
+  const compactObject = (object: typeof demoGraph.objects[number]) => {
+    object.origin.atlasRoot = compact(object.origin.atlasRoot) ?? object.origin.atlasRoot;
+  };
+  for (const object of demoGraph.objects) compactObject(object);
+  for (const object of Object.values(demoGraph.objectsByUid)) compactObject(object);
+  for (const object of Object.values(demoGraph.objectsByName)) compactObject(object);
+
+  for (const mount of demoGraph.referenceMounts) {
+    mount.root = compactNullable(mount.root);
+    mount.realRoot = compactNullable(mount.realRoot);
+  }
+  for (const entry of Object.values(demoGraph.bibRegistry.entriesByKey)) {
+    entry.file = compact(entry.file);
+    entry.registryPath = compact(entry.registryPath);
+  }
+
+  return demoGraph;
+}
+
+export async function commandDemoData(project: string | undefined, options: {
+  output?: string;
+}): Promise<void> {
+  const graph = await buildGraph(project);
+  const bodies = Object.fromEntries(await Promise.all(graph.objects.map(async (object) => [
+    object.uid,
+    await buildBodyFiles(graph, object)
+  ] as const)));
+  const repoRoot = process.cwd();
+  const payload = {
+    schema_version: "0.1",
+    generated_at: new Date().toISOString(),
+    source_project: compactDemoPath(repoRoot, graph.atlasRoot),
+    graph: compactDemoGraphPaths(graph, repoRoot),
+    bodies
+  };
+  const outputPath = options.output
+    ? path.resolve(process.cwd(), expandHome(options.output))
+    : path.resolve(process.cwd(), "public", "demo-data.json");
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.writeFile(outputPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  console.log(`Wrote demo data for ${graph.config.title}: ${outputPath}`);
+}
+
 export async function commandSuggest(project: string | undefined, options: {
   route?: string;
   output?: string;
@@ -679,6 +743,11 @@ async function main(): Promise<void> {
     .option("--output <file>", "write export to a file")
     .option("--snapshot <file>", "write a frozen snapshot YAML")
     .action((routeFile, project, options) => commandExport(routeFile, project, options));
+
+  program.command("demo-data")
+    .argument("[project]", "ProofAtlas directory or workspace directory")
+    .option("--output <file>", "write static demo JSON", "public/demo-data.json")
+    .action((project, options) => commandDemoData(project, options));
 
   program.command("suggest")
     .argument("[project]", "ProofAtlas directory or workspace directory")

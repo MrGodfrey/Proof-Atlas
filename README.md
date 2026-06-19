@@ -2,7 +2,9 @@
 
 **Proof Atlas is a local-first workbench for mathematical research: write proofs in Markdown, describe the proof graph in YAML, and browse the whole project as a clickable atlas.**
 
-[中文 README](README.zh-CN.md) · [Wiki](wiki/README.md) · [Example project](examples/semidiscrete/ProofAtlas)
+[中文 README](README.zh-CN.md) · [Wiki](wiki/README.md) · [Hosted demo](https://proof-atlas-demo.pages.dev) · [Example project](examples/semidiscrete/ProofAtlas)
+
+**Try the live demo:** [https://proof-atlas-demo.pages.dev](https://proof-atlas-demo.pages.dev)
 
 Mathematical writing is linear at the end, but research rarely is. A theorem depends on lemmas, a proof is blocked by a gap, a failed route is replaced by a better one, and a citation may support only one fragile estimate. Proof Atlas keeps those relationships explicit while leaving the source of truth as ordinary files that work with Git, editors, and local AI tools.
 
@@ -49,6 +51,35 @@ Open:
 ```text
 http://localhost:3217
 ```
+
+## Hosted Demo
+
+Open the public Cloudflare Pages demo: [https://proof-atlas-demo.pages.dev](https://proof-atlas-demo.pages.dev)
+
+The demo build is static. `npm run build:demo` first generates `public/demo-data.json` from `examples/semidiscrete/ProofAtlas`, then builds the Vite app in demo mode. GitHub Actions deploys the resulting `dist/` directory to Cloudflare Pages.
+
+To enable automatic demo deploys for a fork or new repository:
+
+1. Create the Cloudflare Pages project after `npx wrangler login`, or create the same project name in the Cloudflare dashboard:
+
+```bash
+npx wrangler pages project create proof-atlas-demo --production-branch=main
+```
+
+2. In Cloudflare, create an API token with `Account > Cloudflare Pages > Edit`, then add these GitHub repository secrets:
+
+```text
+CLOUDFLARE_ACCOUNT_ID
+CLOUDFLARE_API_TOKEN
+```
+
+3. Push to `main`, or manually run the `Deploy Demo` workflow in GitHub Actions. The workflow runs tests, builds the static demo, and deploys with:
+
+```bash
+wrangler pages deploy dist --project-name=proof-atlas-demo --branch=main
+```
+
+If you use a different Pages project name, update `wrangler.jsonc`, `.github/workflows/deploy-demo.yml`, and the `deploy:demo` script in `package.json`.
 
 ## First Commands
 
