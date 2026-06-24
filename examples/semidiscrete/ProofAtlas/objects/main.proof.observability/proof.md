@@ -26,7 +26,7 @@ z_k(T)=\eta_k & \text{in }\mathcal{M}.
 \end{cases}
 $$
 
-Thanks to [[source.boyer_2010a.claim.partial_discrete_lr]], the adjoint expansion satisfies the pointwise observed low-frequency bound [[main.eq.observability_spectral_bound]].
+Thanks to [[source.boyer_2010a.claim.partial_discrete_lr]], the adjoint expansion satisfies the pointwise observed low-frequency bound [[main.estimate.observability_spectral_bound]].
 
 From Ito's formula again, for all $t\in[0,T]$,
 
@@ -56,7 +56,7 @@ $$
 \end{aligned}
 $$
 
-Combining this monotonicity inequality with [[main.eq.observability_spectral_bound]],
+Combining this monotonicity inequality with [[main.estimate.observability_spectral_bound]],
 
 $$
 \left[

@@ -1,8 +1,8 @@
 uid: obj_20260611_f019
-name: main.eq.observability_spectral_bound
+name: main.estimate.observability_spectral_bound
 kind: math
 role: claim
-display_as: equation
+display_as: estimate
 importance: supporting
 title: Pointwise observed low-frequency bound
 status: needs_check

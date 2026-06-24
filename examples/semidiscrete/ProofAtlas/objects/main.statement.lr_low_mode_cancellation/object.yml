@@ -1,8 +1,8 @@
 uid: obj_20260611_f022
-name: main.eq.lr_low_mode_cancellation
+name: main.statement.lr_low_mode_cancellation
 kind: math
 role: claim
-display_as: equation
+display_as: statement
 importance: supporting
 title: Low-mode cancellation after the controlled subinterval
 status: needs_check

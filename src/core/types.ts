@@ -55,7 +55,7 @@ export const DISPLAY_AS = [
   "notation",
   "definition",
   "assumption",
-  "equation",
+  "statement",
   "theorem",
   "lemma",
   "proposition",

@@ -37,6 +37,7 @@
 **/.atlas/local.yml
 **/.atlas/suggestions/
 **/.atlas/exports/
+wiki/.obsidian
 
 # Node / Vite outputs.
 node_modules/

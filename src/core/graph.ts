@@ -1541,7 +1541,7 @@ function normalizeRouteView(raw: unknown, viewPath: string, graph: NormalizedGra
     graph.problems.push(problem({
       severity: "error",
       code: "unsupported_proof_tree_target",
-      message: "route target must be a math claim that is not displayed as equation or estimate.",
+      message: "route target must be a math claim that is not displayed as statement or estimate.",
       path: viewPath,
       viewPath,
       target: resolvedTarget.name,

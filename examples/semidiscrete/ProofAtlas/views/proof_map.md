@@ -10,7 +10,7 @@ The route proving this theorem is [[main.proof.lr_iteration|the Lebeau-Robbiano 
 
 ## Main Route
 
-The iteration is organized by the [[main.construction.lr_time_grid|time grid]]. On each controlled subinterval, partial null controllability gives [[main.eq.lr_low_mode_cancellation|low-mode cancellation]] and [[main.eq.lr_control_estimate|one-step control cost]]. On the following free subinterval, free decay suppresses the uncontrolled high modes. Repeating this controlled/free pair gives [[main.eq.lr_induction_product|the induction product]], and the final arithmetic is isolated in [[main.calculation.lr_product_estimate|the product estimate]].
+The iteration is organized by the [[main.construction.lr_time_grid|time grid]]. On each controlled subinterval, partial null controllability gives [[main.statement.lr_low_mode_cancellation|low-mode cancellation]] and [[main.estimate.lr_control_estimate|one-step control cost]]. On the following free subinterval, free decay suppresses the uncontrolled high modes. Repeating this controlled/free pair gives [[main.estimate.lr_induction_product|the induction product]], and the final arithmetic is isolated in [[main.calculation.lr_product_estimate|the product estimate]].
 
 ![[main.construction.lr_time_grid]]{expanded}
 
@@ -26,13 +26,13 @@ The product calculation packages the induction product and the exponent identiti
 
 ## Partial Control Branch
 
-The proof of partial null controllability is [[main.proof.partial_null_control|a duality argument]]. Observability bounds the adjoint traces; Hahn-Banach and Riesz produce an adapted control; [[main.eq.partial_control_representation|the representation identity]] and [[main.eq.partial_control_ito_duality|Ito duality]] then force the finite-dimensional projection to vanish.
+The proof of partial null controllability is [[main.proof.partial_null_control|a duality argument]]. Observability bounds the adjoint traces; Hahn-Banach and Riesz produce an adapted control; [[main.statement.partial_control_representation|the representation identity]] and [[main.statement.partial_control_ito_duality|Ito duality]] then force the finite-dimensional projection to vanish.
 
 ![[main.claim.observability]]{expanded}
 
 ## Observability Branch
 
-Observability is the analytic input underneath partial control. The proof [[main.proof.observability|expands the adjoint in low modes]], applies the imported [[source.boyer_2010a.claim.partial_discrete_lr|partial discrete Lebeau-Robbiano inequality]], and converts [[main.eq.observability_spectral_bound|the pointwise spectral bound]] into an integral observation estimate.
+Observability is the analytic input underneath partial control. The proof [[main.proof.observability|expands the adjoint in low modes]], applies the imported [[source.boyer_2010a.claim.partial_discrete_lr|partial discrete Lebeau-Robbiano inequality]], and converts [[main.estimate.observability_spectral_bound|the pointwise spectral bound]] into an integral observation estimate.
 
 ![[source.boyer_2010a.claim.partial_discrete_lr]]{expanded}
 

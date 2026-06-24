@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { commandRoute } from "../src/cli/atlas";
@@ -75,18 +76,168 @@ describe("generated routes", () => {
 
   it("exports cloud markdown without raw Proof Atlas object links", async () => {
     const graph = await buildGraph("examples/semidiscrete/ProofAtlas");
-    const routeView = graph.routeViews.find((view) => view.path === "views/null_controllability.route.yml");
+    const routeView = graph.routeViews.find((view) => view.path === "views/partial_null_control.route.yml");
     const route = resolveRoute(graph, routeView!.route);
     const result = await exportRoute(graph, route, "markdown");
+    const acceptedInput = "source.boyer_2010a.claim.partial_discrete_lr";
 
+    expect(route.boundaries).toEqual([]);
+    expect(route.nodes.find((node) => node.object.name === acceptedInput)?.decision).toBe("boundary");
     expect(result.diagnostics).toEqual([]);
-    expect(result.content).toContain("## Selected Proof Route");
-    expect(result.content).toContain("Accepted boundary");
-    expect(result.content).toContain("uid: obj_");
-    expect(result.content).toContain("name: main.claim.null_controllability");
-    expect(result.content).toContain("status:");
-    expect(result.content).toContain("provenance:");
+    expect(result.content).toContain("# Proof Verification Context");
+    expect(result.content).toContain("## Proof Route");
+    expect(result.content).toContain("Short proof tree; full dependency edges are intentionally omitted.");
+    expect(result.content).toContain("## Accepted Inputs");
+    expect(result.content).toContain(`- \`${acceptedInput}\``);
+    expect(result.content).toContain("> Accepted input; proof not included.");
+    expect(result.content).toContain("## Statements, Estimates, and Calculations");
+    expect(result.content).toContain("## References");
+    expect(result.content).toContain("[Boyer2010a]");
+    expect(result.content).toContain("Object: `main.claim.partial_null_control`");
+    expect(result.content).not.toContain("## Citation Context");
+    expect(result.content).not.toContain("```yaml");
+    expect(result.content).not.toContain("uid: obj_");
+    expect(result.content).not.toContain("content_included:");
+    expect(result.content).not.toContain("status:");
+    expect(result.content).not.toContain("provenance:");
+    expect(result.content).not.toContain("citation_trust:");
+    expect(result.content).not.toContain("Dependency edges included in this context");
+    expect(result.content).not.toContain("## Diagnostics");
+    expect(result.content).not.toContain("No diagnostics.");
     expect(result.content).not.toMatch(/!?\[\[/);
+  });
+
+  it("exports self object links as plain text", async () => {
+    const root = await tempDir("pa-route-self-link-");
+    const project = await writeTestProject(root, [
+      {
+        ...baseClaim("main.claim.target", "obj_20260611_self1"),
+        object: {
+          uid: "obj_20260611_self1",
+          name: "main.claim.target",
+          kind: "math",
+          role: "claim",
+          title: "Target",
+          body: ["statement.md"]
+        },
+        bodies: { "statement.md": "Target statement.\n" }
+      },
+      {
+        object: {
+          uid: "obj_20260611_self2",
+          name: "main.proof.target",
+          kind: "math",
+          role: "proof",
+          title: "Target Proof",
+          body: ["proof.md"],
+          edges: {
+            proves: [{ target: "main.claim.target" }]
+          }
+        },
+        bodies: {
+          "proof.md": [
+            "This proof refers to [[main.proof.target|this local step]].",
+            "The degenerate interval [[main.proof.target]]--[[main.proof.target]] should stay readable.",
+            "It proves [[main.claim.target|the target]].",
+            ""
+          ].join("\n")
+        }
+      }
+    ], {
+      views: { "paper.md": "# Paper\n\n![[main.claim.target]]\n" }
+    });
+
+    const graph = await buildGraph(project);
+    const route = resolveRoute(graph, {
+      target: "main.claim.target",
+      profile: "proof",
+      proofChoices: { "main.claim.target": "main.proof.target" }
+    });
+    const result = await exportRoute(graph, route, "markdown");
+
+    expect(result.content).toContain("This proof refers to this local step.");
+    expect(result.content).toContain("The degenerate interval Target Proof should stay readable.");
+    expect(result.content).toContain("[the target](#object-main-claim-target)");
+    expect(result.content).not.toContain("[this local step](#object-main-proof-target)");
+    expect(result.content).not.toContain("Target Proof--Target Proof");
+    expect(result.content).not.toMatch(/!?\[\[/);
+  });
+
+  it("materializes references from linked citation objects outside the route", async () => {
+    const root = await tempDir("pa-route-linked-reference-");
+    const project = await writeTestProject(root, [
+      {
+        ...baseClaim("main.claim.target", "obj_20260611_ref1"),
+        object: {
+          uid: "obj_20260611_ref1",
+          name: "main.claim.target",
+          kind: "math",
+          role: "claim",
+          title: "Target",
+          body: ["statement.md"]
+        },
+        bodies: { "statement.md": "This target cites [[paper.note|Paper2026]].\n" }
+      },
+      {
+        object: {
+          uid: "obj_20260611_ref2",
+          name: "main.proof.target",
+          kind: "math",
+          role: "proof",
+          title: "Target Proof",
+          body: ["proof.md"],
+          edges: {
+            proves: [{ target: "main.claim.target" }]
+          }
+        },
+        bodies: { "proof.md": "Proof body.\n" }
+      },
+      {
+        object: {
+          uid: "obj_20260611_ref3",
+          name: "paper.note",
+          kind: "note",
+          role: "literature",
+          title: "Linked Paper",
+          body: ["note.md"],
+          provenance: "external",
+          citation: { bibkey: "Paper2026" }
+        },
+        bodies: { "note.md": "Reference note.\n" }
+      }
+    ], {
+      views: { "paper.md": "# Paper\n\n![[main.claim.target]]\n" }
+    });
+    await fs.writeFile(path.join(project, "references.bib"), [
+      "@article{Paper2026,",
+      "  author = {Author, Ada},",
+      "  title = {Linked Paper},",
+      "  journal = {Journal of Tests},",
+      "  year = {2026},",
+      "  doi = {10.0000/test}",
+      "}",
+      ""
+    ].join("\n"), "utf8");
+    await fs.writeFile(path.join(project, "bib-registry.yml"), [
+      'schema_version: "0.1"',
+      "trusted:",
+      "  - id: local",
+      "    path: references.bib",
+      ""
+    ].join("\n"), "utf8");
+
+    const graph = await buildGraph(project);
+    const route = resolveRoute(graph, {
+      target: "main.claim.target",
+      profile: "proof",
+      proofChoices: { "main.claim.target": "main.proof.target" }
+    });
+    const result = await exportRoute(graph, route, "markdown");
+
+    expect(result.content).toContain("Paper2026 (not included in this context)");
+    expect(result.content).toContain("## References");
+    expect(result.content).toContain("[Paper2026] Author, Ada. Linked Paper. Journal of Tests. 2026. DOI: 10.0000/test.");
+    expect(result.content).toContain("Role in this context: background reference.");
   });
 
   it("rejects proof tree routes whose target is not a proof-obligation claim", async () => {
@@ -107,14 +258,14 @@ describe("generated routes", () => {
   it("uses the shared proof-obligation predicate for claim display eligibility", async () => {
     const graph = await buildGraph("examples/semidiscrete/ProofAtlas");
     expect(isProofObligationObject(graph.objectsByName["main.claim.null_controllability"])).toBe(true);
-    expect(isProofObligationObject(graph.objectsByName["main.eq.partial_control_representation"])).toBe(false);
-    expect(isProofObligationObject(graph.objectsByName["main.eq.observability_spectral_bound"])).toBe(false);
+    expect(isProofObligationObject(graph.objectsByName["main.statement.partial_control_representation"])).toBe(false);
+    expect(isProofObligationObject(graph.objectsByName["main.estimate.observability_spectral_bound"])).toBe(false);
 
-    const equationRoute = resolveRoute(graph, {
-      target: "main.eq.partial_control_representation",
+    const statementRoute = resolveRoute(graph, {
+      target: "main.statement.partial_control_representation",
       profile: "proof"
     });
-    expect(equationRoute.diagnostics.map((item) => item.code)).toContain("unsupported_proof_tree_target");
+    expect(statementRoute.diagnostics.map((item) => item.code)).toContain("unsupported_proof_tree_target");
   });
 
   it("deduplicates route diagnostics reached through multiple witness paths", async () => {
@@ -367,8 +518,10 @@ describe("generated routes", () => {
     expect(snapshot.type).toBe("snapshot");
     expect(snapshot.route.uid).toBe(routeView!.route.uid);
     expect(snapshot.object_names).toEqual(route.nodes.map((node) => node.object.name));
-    expect(snapshot.markdown).toContain("# Proof Atlas Cloud Context");
-    expect(snapshot.markdown).toContain("uid: obj_");
+    expect(snapshot.markdown).toContain("# Proof Verification Context");
+    expect(snapshot.markdown).toContain("Object: `main.claim.null_controllability`");
+    expect(snapshot.markdown).not.toContain("uid: obj_");
+    expect(snapshot.markdown).not.toContain("content_included:");
     expect(snapshot.markdown).not.toMatch(/!?\[\[/);
     expect(snapshot.diagnostics).toEqual([]);
   });

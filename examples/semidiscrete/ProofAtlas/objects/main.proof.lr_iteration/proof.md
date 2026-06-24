@@ -21,9 +21,9 @@ u_j\in L^\infty_{\mathbb{F}}
 \bigl(a_j,a_j+T_j;L^2(\Omega;E_j)\bigr)
 $$
 
-such that the solution $y$ to the system above with $u=u_j$ satisfies [[main.eq.lr_low_mode_cancellation]].
+such that the solution $y$ to the system above with $u=u_j$ satisfies [[main.statement.lr_low_mode_cancellation]].
 
-The same partial control step gives the subinterval control cost [[main.eq.lr_control_estimate]].
+The same partial control step gives the subinterval control cost [[main.estimate.lr_control_estimate]].
 
 Also,
 
@@ -48,7 +48,7 @@ y(t)=0
 \end{cases}
 $$
 
-By [[main.eq.lr_low_mode_cancellation]] and [[main.claim.free_decay]], noting that $\mu_k>2^{2j}$, we get
+By [[main.statement.lr_low_mode_cancellation]] and [[main.claim.free_decay]], noting that $\mu_k>2^{2j}$, we get
 
 $$
 \begin{aligned}
@@ -120,7 +120,7 @@ $$
 
 completes conclusions (i) and (ii) in [[main.claim.null_controllability]].
 
-It remains to prove conclusion (iii), the control bound. From [[main.eq.lr_control_estimate]], [[main.eq.lr_induction_product]], and [[main.eq.lr_exponent_identities]], there exists $C_2>0$ such that
+It remains to prove conclusion (iii), the control bound. From [[main.estimate.lr_control_estimate]], [[main.estimate.lr_induction_product]], and [[main.calculation.lr_exponent_identities]], there exists $C_2>0$ such that
 
 $$
 \begin{aligned}

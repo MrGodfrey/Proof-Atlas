@@ -12,8 +12,8 @@ summary: The induction product and exponent calculation that yield the final exp
 edges:
   requires:
     - target: main.construction.lr_time_grid
-    - target: main.eq.lr_induction_product
-    - target: main.eq.lr_exponent_identities
+    - target: main.estimate.lr_induction_product
+    - target: main.calculation.lr_exponent_identities
     - target: main.claim.partial_null_control
     - target: main.claim.free_decay
     - target: main.setting.spectral_spaces

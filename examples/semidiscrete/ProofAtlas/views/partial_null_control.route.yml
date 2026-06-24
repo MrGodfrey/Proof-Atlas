@@ -15,15 +15,15 @@ representation:
   main.setting.spectral_spaces: statement
   main.claim.observability: statement
   main.construction.partial_control_duality: statement
-  main.eq.partial_control_ito_duality: statement
-  main.eq.partial_control_representation: statement
+  main.statement.partial_control_ito_duality: statement
+  main.statement.partial_control_representation: statement
   main.model.backward_adjoint_system: statement
   main.setting.discrete_mesh: statement
   main.setting.domain_and_coefficients: statement
   main.setting.grid_operator: statement
   main.setting.probability_and_spaces: statement
   main.proof.observability: full
-  main.eq.observability_spectral_bound: statement
+  main.estimate.observability_spectral_bound: statement
   source.boyer_2010a.claim.partial_discrete_lr: statement
 render:
   order: prerequisites_first

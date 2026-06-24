@@ -10,7 +10,7 @@ Mathematical writing is linear at the end, but research rarely is. A theorem dep
 
 ## What It Gives You
 
-- A file format for proof objects: claims, proofs, equations, models, constructions, calculations, issues, and literature notes.
+- A file format for proof objects: claims, proofs, statements, estimates, models, constructions, calculations, issues, and literature notes.
 - A graph-aware local web UI with views, object cards, dependency links, reverse links, status, and KaTeX rendering.
 - A CLI for initializing projects, validating object graphs, locating objects by stable IDs, creating objects, resolving generated proof routes, exporting cloud contexts, and safely renaming object references.
 - Generated Views that separate the proof spine from vocabulary/context nodes, boundary assumptions, and open obligations.

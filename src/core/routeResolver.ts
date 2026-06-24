@@ -555,7 +555,7 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
     diagnostics.push({
       severity: "error",
       code: "unsupported_proof_tree_target",
-      message: "Proof tree target must be a math claim that is not displayed as equation or estimate.",
+      message: "Proof tree target must be a math claim that is not displayed as statement or estimate.",
       objectName: target.name
     });
   }

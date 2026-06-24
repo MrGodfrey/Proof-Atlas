@@ -73,17 +73,17 @@ describe("Proof Atlas core", () => {
     expect(rewritten).toContain("$[[main.claim.math]]$");
   });
 
-  it("adds visual wrappers for equation and literature links", () => {
+  it("adds visual wrappers for literature links only", () => {
     const html = renderMarkdownBlock(
-      "Use [[main.eq.energy|energy identity]], cite [[source.paper|Boyer 2010]], and open [[main.claim.a|the claim]].",
+      "Use [[main.statement.energy|energy identity]], cite [[source.paper|Boyer 2010]], and open [[main.claim.a|the claim]].",
       (name) => {
-        if (name === "main.eq.energy") return { name, display_as: "equation", role: "claim" };
+        if (name === "main.statement.energy") return { name, display_as: "statement", role: "claim" };
         if (name === "source.paper") return { name, display_as: "literature_note", role: "literature" };
         if (name === "main.claim.a") return { name, display_as: "theorem", role: "claim" };
         return undefined;
       }
     );
-    expect(html).toContain(">(energy identity)</a>");
+    expect(html).toContain(">energy identity</a>");
     expect(html).toContain(">[Boyer 2010]</a>");
     expect(html).toContain(">the claim</a>");
   });

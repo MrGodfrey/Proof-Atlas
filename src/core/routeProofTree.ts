@@ -35,7 +35,7 @@ export interface RouteProofTree {
 
 const TREE_SUPPORT_ROLES = new Set(["proof", "proof_fragment", "construction", "calculation"]);
 const CONTEXT_ROLES = new Set(["problem", "setting", "notation", "definition", "model", "assumption", "example", "counterexample"]);
-const CONTEXT_DISPLAYS = new Set(["equation", "estimate"]);
+const CONTEXT_DISPLAYS = new Set(["statement", "estimate"]);
 
 function proofTreeObjectKey(path: string[], object: NormalizedObject): string {
   return [...path, object.name].join(">");

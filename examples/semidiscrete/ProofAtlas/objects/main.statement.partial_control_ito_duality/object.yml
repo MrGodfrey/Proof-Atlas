@@ -1,8 +1,8 @@
 uid: obj_20260611_f021
-name: main.eq.partial_control_ito_duality
+name: main.statement.partial_control_ito_duality
 kind: math
 role: claim
-display_as: equation
+display_as: statement
 importance: supporting
 title: Ito duality identity for the forward and adjoint systems
 status: needs_check

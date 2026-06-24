@@ -72,7 +72,7 @@ Warnings do not necessarily make ordinary graph build fail, but they appear in t
 - `claim_uses_own_proof`: claim `uses` points to the proof of itself.
 - `claim_uses_dependency`: claim has proof-dependency-style `uses`; usually move it to the corresponding proof's `uses`.
 - `needs_confirmation`: route has multiple reasonable proof candidates; resolver used deterministic default but human confirmation is recommended.
-- `unsupported_proof_tree_target`: Generated View target is not a proof-obligation claim. The target must be `kind: math`, `role: claim`, and not displayed as `equation` or `estimate`.
+- `unsupported_proof_tree_target`: Generated View target is not a proof-obligation claim. The target must be `kind: math`, `role: claim`, and not displayed as `statement` or `estimate`.
 - `citation_bibfile_deprecated`: object hand-wrote `citation.bibfile`; BibTeX file should be derived from `bib-registry.yml`.
 - `unverified_external_dependency`: proof hard-uses an unverified external result and needs source trust review.
 

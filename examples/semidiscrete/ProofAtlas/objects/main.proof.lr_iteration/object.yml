@@ -17,8 +17,8 @@ edges:
   uses:
     - target: main.construction.lr_time_grid
     - target: main.calculation.lr_product_estimate
-    - target: main.eq.lr_low_mode_cancellation
-    - target: main.eq.lr_control_estimate
+    - target: main.statement.lr_low_mode_cancellation
+    - target: main.estimate.lr_control_estimate
     - target: main.claim.partial_null_control
     - target: main.claim.free_decay
     - target: main.claim.observability

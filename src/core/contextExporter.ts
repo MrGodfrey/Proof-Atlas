@@ -1,10 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { edgeTargets, hardEdgeTargets } from "./edgeUtils";
+import { hardEdgeTargets } from "./edgeUtils";
 import { parseMarkdownReferences } from "./markdownRefs";
-import type { NormalizedGraph, NormalizedObject, RepresentationMode, RouteView } from "./types";
+import type { NormalizedGraph, NormalizedObject, RouteView } from "./types";
 import type { ResolvedRoute, RouteDiagnostic, ResolvedRouteNode } from "./routeResolver";
 import { linearizeRoute } from "./routeLinearizer";
+import { deriveRouteProofTree, type ProofTreeNode } from "./routeProofTree";
 
 export type ExportFormat = "markdown" | "manifest" | "json";
 
@@ -28,30 +29,6 @@ export interface RouteSnapshot {
 
 function anchorForName(name: string): string {
   return `object-${name.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-|-$/g, "")}`;
-}
-
-function metadataLines(graph: NormalizedGraph, node: ResolvedRouteNode): string[] {
-  const object = node.object;
-  const citationLines = object.citation ? [
-    `citation_bibkey: ${object.citation.bibkey}`,
-    ...(object.citation.trust ? [`citation_trust: ${object.citation.trust}`] : []),
-    ...(object.citation.registryId ? [`citation_registry: ${object.citation.registryId}`] : [])
-  ] : [];
-  return [
-    `uid: ${object.uid}`,
-    `name: ${object.name}`,
-    `status: ${object.status}`,
-    `provenance: ${object.provenance}`,
-    `origin: ${object.origin.kind}`,
-    ...(object.origin.atlasId ? [`origin_atlas: ${object.origin.atlasId}`] : []),
-    `source path: ${path.posix.join(object.dir, "object.yml")}`,
-    `representation: ${node.representation}`,
-    `decision: ${node.decision}`,
-    `inclusion_class: ${node.inclusionClass}`,
-    `hardness: ${node.hardness}`,
-    `project: ${graph.config.project}`,
-    ...citationLines
-  ];
 }
 
 async function readBodyFile(graph: NormalizedGraph, object: NormalizedObject, bodyFile: string, diagnostics: RouteDiagnostic[]): Promise<string> {
@@ -107,12 +84,23 @@ function linkLabel(refTarget: string, displayText?: string): string {
   return displayText && displayText.trim() ? displayText.trim() : refTarget;
 }
 
+function collapseRepeatedSelfLinkLabels(source: string, labels: Set<string>): string {
+  let out = source;
+  for (const label of [...labels].sort((a, b) => b.length - a.length)) {
+    if (!label) continue;
+    const escaped = escapeRegex(label);
+    out = out.replace(new RegExp(`${escaped}\\s*--\\s*${escaped}`, "g"), label);
+  }
+  return out;
+}
+
 function rewriteAtlasLinks(
   graph: NormalizedGraph,
   source: string,
   currentObject: NormalizedObject,
   included: Set<string>,
-  diagnostics: RouteDiagnostic[]
+  diagnostics: RouteDiagnostic[],
+  collectReference?: (object: NormalizedObject) => void
 ): string {
   const refs = parseMarkdownReferences(source)
     .sort((a, b) => b.start - a.start);
@@ -120,12 +108,17 @@ function rewriteAtlasLinks(
     ...hardEdgeTargets(currentObject.edges.requires),
     ...hardEdgeTargets(currentObject.edges.uses)
   ]);
+  const selfLabels = new Set<string>();
   let out = source;
   for (const ref of refs) {
     const resolved = graph.objectsByName[ref.target] ?? graph.objectsByUid[ref.target] ?? graph.objectsByUid[graph.aliases[ref.target]];
+    if (resolved?.citation) collectReference?.(resolved);
     const label = linkLabel(resolved?.title ?? ref.target, ref.displayText);
     let replacement: string;
-    if (resolved && included.has(resolved.name)) {
+    if (resolved?.name === currentObject.name) {
+      selfLabels.add(label);
+      replacement = label;
+    } else if (resolved && included.has(resolved.name)) {
       replacement = `[${label}](#${anchorForName(resolved.name)})`;
     } else {
       if (resolved && hardTargets.has(resolved.name)) {
@@ -141,43 +134,264 @@ function rewriteAtlasLinks(
     }
     out = `${out.slice(0, ref.start)}${replacement}${out.slice(ref.end)}`;
   }
-  return out;
+  return collapseRepeatedSelfLinkLabels(out, selfLabels);
 }
 
 function sectionForNode(node: ResolvedRouteNode, targetName: string): string {
   if (node.object.name === targetName) return "Target";
-  if (node.decision === "boundary") return "Imported Assumptions / Boundaries";
-  if (node.object.kind === "math" && ["setting", "notation", "definition", "assumption", "problem"].includes(node.object.role)) {
+  if (node.decision === "boundary") return "Accepted Inputs";
+  if (node.object.kind === "math" && ["setting", "notation", "definition", "assumption", "problem", "model"].includes(node.object.role)) {
     return "Definitions and Settings";
   }
-  if (node.object.kind === "math" && ["model", "construction", "calculation"].includes(node.object.role)) {
-    return "Definitions and Settings";
+  if (
+    node.object.kind === "math"
+    && (["statement", "estimate"].includes(node.object.display_as) || ["construction", "calculation"].includes(node.object.role))
+  ) {
+    return "Statements, Estimates, and Calculations";
   }
   if (node.object.kind === "math" && node.object.role === "claim") return "Supporting Claims";
   if (node.object.kind === "math" && ["proof", "proof_fragment"].includes(node.object.role)) return "Proofs and Proof Fragments";
   if (node.object.kind === "issue") return "Open Issues";
-  return "Source Manifest";
+  return "Citation and Source Notes";
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function stripBibValue(value: string): string {
+  return value
+    .replace(/\\[{}]/g, "")
+    .replace(/[{}]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function findBibEntry(source: string, bibkey: string): string | undefined {
+  const match = new RegExp(`@\\w+\\s*\\{\\s*${escapeRegex(bibkey)}\\s*,`, "i").exec(source);
+  if (!match) return undefined;
+  const start = match.index;
+  const open = source.indexOf("{", start);
+  if (open < 0) return undefined;
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  return undefined;
+}
+
+function parseBibFields(entry: string): Record<string, string> {
+  const fields: Record<string, string> = {};
+  const firstComma = entry.indexOf(",");
+  const lastBrace = entry.lastIndexOf("}");
+  if (firstComma < 0 || lastBrace < firstComma) return fields;
+  const body = entry.slice(firstComma + 1, lastBrace);
+  let index = 0;
+  while (index < body.length) {
+    while (index < body.length && /[\s,]/.test(body[index])) index += 1;
+    const nameStart = index;
+    while (index < body.length && /[A-Za-z0-9_-]/.test(body[index])) index += 1;
+    const name = body.slice(nameStart, index).toLowerCase();
+    while (index < body.length && /\s/.test(body[index])) index += 1;
+    if (!name || body[index] !== "=") {
+      index += 1;
+      continue;
+    }
+    index += 1;
+    while (index < body.length && /\s/.test(body[index])) index += 1;
+    let value = "";
+    if (body[index] === "{") {
+      const valueStart = index + 1;
+      let depth = 1;
+      index += 1;
+      while (index < body.length && depth > 0) {
+        if (body[index] === "{") depth += 1;
+        if (body[index] === "}") depth -= 1;
+        index += 1;
+      }
+      value = body.slice(valueStart, index - 1);
+    } else if (body[index] === "\"") {
+      const valueStart = index + 1;
+      index += 1;
+      while (index < body.length && body[index] !== "\"") index += 1;
+      value = body.slice(valueStart, index);
+      index += 1;
+    } else {
+      const valueStart = index;
+      while (index < body.length && body[index] !== ",") index += 1;
+      value = body.slice(valueStart, index);
+    }
+    fields[name] = stripBibValue(value);
+  }
+  return fields;
+}
+
+async function citationReferenceLine(object: NormalizedObject): Promise<string | undefined> {
+  if (!object.citation) return undefined;
+  const bibkey = object.citation.bibkey;
+  if (!object.citation.bibfile) return `[${bibkey}] ${object.title}.`;
+  try {
+    const source = await fs.readFile(object.citation.bibfile, "utf8");
+    const entry = findBibEntry(source, bibkey);
+    if (!entry) return `[${bibkey}] ${object.title}.`;
+    const fields = parseBibFields(entry);
+    const author = fields.author ?? fields.editor;
+    const title = fields.title;
+    const venue = fields.journal ?? fields.booktitle ?? fields.publisher ?? fields.school;
+    const volumeIssue = [
+      fields.volume,
+      fields.number ? `(${fields.number})` : undefined
+    ].filter(Boolean).join("");
+    const pages = fields.pages ? `pp. ${fields.pages}` : undefined;
+    const year = fields.year;
+    const doi = fields.doi ? `DOI: ${fields.doi}` : undefined;
+    const parts = [author, title, venue, volumeIssue, pages, year, doi].filter((part): part is string => Boolean(part));
+    return parts.length ? `[${bibkey}] ${parts.join(". ")}.` : `[${bibkey}] ${object.title}.`;
+  } catch {
+    return `[${bibkey}] ${object.title}.`;
+  }
+}
+
+function citationRole(node: ResolvedRouteNode): string {
+  if (node.decision === "boundary" || node.inclusionClass === "boundary") {
+    return "accepted input";
+  }
+  if (node.object.source_result || (node.object.provenance !== "internal" && node.object.kind === "math")) {
+    return "source of imported statement";
+  }
+  return "background reference";
+}
+
+function linkedCitationRole(object: NormalizedObject): string {
+  if (object.source_result || (object.provenance !== "internal" && object.kind === "math")) {
+    return "source of imported statement";
+  }
+  return "background reference";
+}
+
+async function referenceContext(route: ResolvedRoute, linkedObjects: NormalizedObject[]): Promise<string[]> {
+  const entries = new Map<string, { line: string; roles: Set<string> }>();
+  const lines: string[] = [];
+  const addObject = async (object: NormalizedObject, role: string) => {
+    const bibkey = object.citation?.bibkey;
+    if (!bibkey) return;
+    const existing = entries.get(bibkey);
+    if (existing) {
+      existing.roles.add(role);
+      return;
+    }
+    const line = await citationReferenceLine(object);
+    if (line) entries.set(bibkey, { line, roles: new Set([role]) });
+  };
+
+  for (const node of route.nodes) {
+    await addObject(node.object, citationRole(node));
+  }
+  for (const object of linkedObjects) {
+    await addObject(object, linkedCitationRole(object));
+  }
+  for (const entry of entries.values()) {
+    lines.push(`- ${entry.line}`);
+    lines.push(`  Role in this context: ${[...entry.roles].join("; ")}.`);
+  }
+  return lines;
+}
+
+const PROOF_TREE_MAX_NODES = 80;
+const PROOF_TREE_MAX_DEPTH = 10;
+
+function proofTreeAnnotation(node: ProofTreeNode): string {
+  if (node.role === "boundary") return " [accepted input]";
+  if (node.role === "shared_reference") return " [shared]";
+  if (node.role === "open") return " [open]";
+  return "";
+}
+
+function proofTreeLines(
+  node: ProofTreeNode,
+  state: { emitted: number; truncated: boolean },
+  prefix = "",
+  isLast = true,
+  isRoot = true
+): string[] {
+  if (state.emitted >= PROOF_TREE_MAX_NODES) {
+    state.truncated = true;
+    return [];
+  }
+
+  const connector = isRoot ? "" : `${prefix}${isLast ? "`-- " : "|-- "}`;
+  const lines = [`${connector}${node.object.name}${proofTreeAnnotation(node)}`];
+  state.emitted += 1;
+
+  if (node.depth >= PROOF_TREE_MAX_DEPTH) {
+    if (node.children.length) state.truncated = true;
+    return lines;
+  }
+
+  const childPrefix = isRoot ? "" : `${prefix}${isLast ? "    " : "|   "}`;
+  node.children.forEach((child, index) => {
+    lines.push(...proofTreeLines(child, state, childPrefix, index === node.children.length - 1, false));
+  });
+  return lines;
+}
+
+function proofRouteSection(route: ResolvedRoute, graph: NormalizedGraph): string[] {
+  const tree = deriveRouteProofTree(route, graph);
+  const state = { emitted: 0, truncated: false };
+  const lines = proofTreeLines(tree.root, state);
+  if (state.truncated) lines.push("... proof tree truncated; see object sections for remaining context.");
+
+  return [
+    "## Proof Route",
+    "",
+    `Target: \`${route.target.name}\``,
+    "",
+    "Short proof tree; full dependency edges are intentionally omitted.",
+    "",
+    "```text",
+    ...lines,
+    "```"
+  ];
+}
+
+function acceptedInputsIntro(nodes: ResolvedRouteNode[]): string[] {
+  if (!nodes.length) {
+    return ["No accepted inputs are included without proof in this context."];
+  }
+  return [
+    "The following statements are included, but their proofs are not included in this context.",
+    "",
+    ...nodes.map((node) => `- \`${node.object.name}\``)
+  ];
 }
 
 async function objectSection(
   graph: NormalizedGraph,
   node: ResolvedRouteNode,
   included: Set<string>,
-  diagnostics: RouteDiagnostic[]
+  diagnostics: RouteDiagnostic[],
+  collectReference?: (object: NormalizedObject) => void
 ): Promise<string> {
   const body = await materializeObjectBody(graph, node, diagnostics);
-  const rewritten = rewriteAtlasLinks(graph, body, node.object, included, diagnostics).trim();
-  const boundary = node.decision === "boundary" ? "\n\n> Accepted boundary; dependencies are not expanded in this context." : "";
-  return [
+  const rewritten = rewriteAtlasLinks(graph, body, node.object, included, diagnostics, collectReference).trim();
+  const parts = [
     `<a id="${anchorForName(node.object.name)}"></a>`,
     `### ${node.object.title}`,
     "",
-    "```yaml",
-    metadataLines(graph, node).join("\n"),
-    "```",
-    boundary,
-    rewritten
-  ].filter((part) => part !== "").join("\n");
+    `Object: \`${node.object.name}\``
+  ];
+  if (node.decision === "boundary") {
+    parts.push("", "> Accepted input; proof not included.");
+  }
+  if (rewritten) {
+    parts.push("", rewritten);
+  }
+  return parts.join("\n");
 }
 
 export function createLocalManifest(graph: NormalizedGraph, route: ResolvedRoute): Record<string, unknown> {
@@ -214,53 +428,56 @@ export async function exportCloudMarkdown(graph: NormalizedGraph, route: Resolve
   const diagnostics = [...route.diagnostics];
   const included = new Set(route.nodes.map((node) => node.object.name));
   const linear = linearizeRoute(route);
-  const selectedProofs = Object.entries(route.selectedProofs)
-    .map(([claim, proof]) => `- ${claim}: ${proof}`)
-    .join("\n") || "- No proof choices selected.";
+  const linkedReferenceObjects = new Map<string, NormalizedObject>();
+  const collectReference = (object: NormalizedObject) => {
+    if (!object.citation) return;
+    linkedReferenceObjects.set(object.citation.bibkey, object);
+  };
 
   const sections = new Map<string, ResolvedRouteNode[]>();
   for (const node of linear.nodes) {
     const section = sectionForNode(node, route.target.name);
     sections.set(section, [...(sections.get(section) ?? []), node]);
   }
+  const acceptedInputNodes = sections.get("Accepted Inputs") ?? [];
 
   const out: string[] = [
-    `# Proof Atlas Cloud Context: ${route.target.title}`,
+    `# Proof Verification Context: ${route.target.title}`,
     "",
-    "## Task",
+    "This Markdown file isolates the local context for checking whether the included proof route establishes the target statement. It is not a proof verdict; workflow status, citation trust, export diagnostics, and export-integrity metadata are intentionally omitted from this context.",
     "",
-    `Use this context to reason about \`${route.target.name}\` under the \`${route.profile}\` profile. Hard dependencies are materialized at or above their representation floor; boundary nodes are accepted inputs whose dependencies are intentionally not expanded.`,
+    ...proofRouteSection(route, graph),
     "",
-    "## Selected Proof Route",
+    "## Accepted Inputs",
     "",
-    selectedProofs
+    ...acceptedInputsIntro(acceptedInputNodes)
   ];
+
+  for (const node of acceptedInputNodes) {
+    out.push("", await objectSection(graph, node, included, diagnostics, collectReference), "");
+  }
 
   const orderedSections = [
     "Target",
     "Definitions and Settings",
-    "Imported Assumptions / Boundaries",
+    "Statements, Estimates, and Calculations",
     "Supporting Claims",
     "Proofs and Proof Fragments",
     "Open Issues",
-    "Source Manifest"
+    "Citation and Source Notes"
   ];
   for (const title of orderedSections) {
     const nodes = sections.get(title) ?? [];
     if (!nodes.length) continue;
     out.push("", `## ${title}`, "");
     for (const node of nodes) {
-      out.push(await objectSection(graph, node, included, diagnostics), "");
+      out.push(await objectSection(graph, node, included, diagnostics, collectReference), "");
     }
   }
 
-  out.push("## Diagnostics", "");
-  if (diagnostics.length === 0) {
-    out.push("No diagnostics.");
-  } else {
-    for (const item of diagnostics) {
-      out.push(`- [${item.severity}] ${item.code}: ${item.message}`);
-    }
+  const references = await referenceContext(route, [...linkedReferenceObjects.values()]);
+  if (references.length) {
+    out.push("", "## References", "", ...references);
   }
 
   return { format: "markdown", content: out.join("\n").replace(/\n{3,}/g, "\n\n"), diagnostics };

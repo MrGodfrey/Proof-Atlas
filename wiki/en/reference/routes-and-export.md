@@ -13,6 +13,14 @@ Code source of truth:
 - `src/core/routeProofTree.ts`: projection from resolved route to the web Proof Tree.
 - `src/core/contextExporter.ts`: materialization rules for Markdown / manifest / JSON export.
 
+Markdown export is the cloud-AI verification context: it materializes the
+selected route into a readable `.context.md` file for checking whether the
+included proof route establishes the target statement. It intentionally omits
+workflow status, citation trust, export diagnostics, schema/version metadata,
+hashes, and local integrity bookkeeping from the Markdown body. Those details
+remain available through the resolver, CLI diagnostics, JSON export, manifest
+export, and optional snapshots.
+
 Current legal representation values are `full`, `statement`, `summary`, `reference`, and `omit`. Do not write `full_statement` or `full statement`.
 
 ## Route File Schema
@@ -94,12 +102,12 @@ A legal target must be a proof obligation:
 ```text
 kind: math
 role: claim
-display_as != equation
+display_as != statement
 display_as != estimate
 ```
 
 Theorems, lemmas, propositions, corollaries, conjectures, and plain claims can be roots. `proof`,
-`proof_fragment`, `construction`, `calculation`, `definition`, `setting`, `model`, `equation`,
+`proof_fragment`, `construction`, `calculation`, `definition`, `setting`, `model`, `statement`,
 `estimate`, `problem`, `note`, and `issue` cannot be Generated View roots.
 
 If a `profile: proof` target is not a proof obligation, the resolver emits
@@ -116,8 +124,8 @@ claim
           -> if already expanded elsewhere, shared reference
 ```
 
-`setting`, `model`, `definition`, `notation`, `assumption`, `equation`, and `estimate`
-do not mix into the main tree. The web UI places them in the collapsed Foundation / context group or in the right-column relations.
+`setting`, `model`, `definition`, `notation`, `assumption`, `statement`, and `estimate`
+do not mix into the main tree. The web UI places them below the main tree in single-column context groups derived from incoming relation types, such as `Required Context`, `Used Statements and Estimates`, `Used Inputs`, and `Citation and Source Context`. The right-column relations still show the selected object's full outgoing and reverse edges.
 
 ## Proof Choice
 
@@ -178,8 +186,12 @@ boundaries:
 Boundary objects still appear in the route node list and Markdown export:
 
 ```text
-Accepted boundary; dependencies are not expanded in this context.
+Boundary input: this statement is included without its proof.
 ```
+
+When a boundary cites a bibliography entry, Markdown export includes a compact
+`Citation Context` entry with author, title, venue, year, and DOI when those
+fields are available from the mounted bib registry.
 
 ## Representation Modes
 
@@ -265,7 +277,7 @@ Statement materialization rules:
 
 - Any object with `statement.md` uses `statement.md` for `statement`.
 - `setting` / `notation` / `definition` / `model` / `construction` / `calculation` can use the first body file as `statement` when `statement.md` is absent.
-- Other objects, including `claim`, `problem`, `assumption`, `equation`, `proof`, `proof_fragment`, and `note`, cannot reliably materialize `statement` without `statement.md`; export records diagnostics and tries to fall back to summary.
+- Other objects, including `claim`, `problem`, `assumption`, `proof`, `proof_fragment`, and `note`, cannot reliably materialize `statement` without `statement.md`; export records diagnostics and tries to fall back to summary.
 - In proof routes, selected proofs usually use `full`.
 
 ## CLI: Resolve Route
@@ -398,11 +410,15 @@ If the tool repository or project directory moved, restart the dev server or reo
 
 Markdown export:
 
-- Outputs Task, Selected Proof Route, Target, Definitions and Settings, Boundaries, Supporting Claims, Proofs, Issues, Source Manifest, and Diagnostics.
-- Adds `uid`, `name`, `status`, `provenance`, source path, representation, decision, hardness, and project to each object section.
+- Outputs Proof Route, Accepted Inputs, Target, Definitions and Settings, Statements / Estimates / Calculations, Supporting Claims, Proofs, Issues, Citation / Source Notes, and References.
+- Keeps Proof Route as a short proof tree covering the target, selected proof, main supporting claims, and proof components. Full dependency edges remain in JSON / manifest export.
+- Derives Accepted Inputs from resolved boundary nodes, including explicit `boundaries` and implicit boundaries created when an external claim is included without expanding a proof.
+- Each object section keeps only the title, an `Object:` line, and body text by default; it does not emit `uid`, `status`, `trust`, `content_included`, or a YAML metadata block.
 - Rewrites included `[[object.name]]` / `![[object.name]]` links into Markdown anchor links.
+- Keeps links that point to the current object as plain display text instead of generating self-links.
 - Marks links outside the slice as `not included in this context`.
-- Emits diagnostics for outside-slice hard dependency links.
+- Materializes citation bibkeys into a final References section and records whether each reference is an accepted input, a source of an imported statement, or a background reference in this context.
+- Returns export diagnostics through the CLI/API result, but does not print a Diagnostics section into the Markdown context.
 
 Snapshot freezes the material:
 

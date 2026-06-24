@@ -10,7 +10,7 @@
 
 ## 它能做什么
 
-- 用文件协议组织数学对象：claim、proof、equation、model、construction、calculation、issue、literature note 等。
+- 用文件协议组织数学对象：claim、proof、statement、estimate、model、construction、calculation、issue、literature note 等。
 - 提供图感知的本地网页界面：view、对象卡片、依赖边、反向边、状态和 KaTeX 渲染。
 - 提供 CLI：初始化项目、校验对象图、按稳定 ID 定位对象、创建对象、解析生成式 proof route、导出云端上下文、安全重命名对象引用。
 - Generated View 会把证明主线、词汇上下文、boundary 假设和 open obligation 分开显示。

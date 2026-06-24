@@ -16,6 +16,6 @@ edges:
     - target: main.claim.observability
     - target: main.model.backward_adjoint_system
     - target: main.setting.spectral_spaces
-    - target: main.eq.partial_control_representation
+    - target: main.statement.partial_control_representation
   cites:
     - target: source.lue_zhang_2021

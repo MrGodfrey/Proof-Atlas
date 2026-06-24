@@ -2,9 +2,9 @@ We prove [[main.claim.partial_null_control]] using the duality construction [[ma
 
 Let $u$ be the control represented by the extended functional in [[main.construction.partial_control_duality]]. We claim that this $u$ is the desired control.
 
-Ito's formula gives the forward-adjoint identity [[main.eq.partial_control_ito_duality]].
+Ito's formula gives the forward-adjoint identity [[main.statement.partial_control_ito_duality]].
 
-Combining [[main.eq.partial_control_representation]] with [[main.eq.partial_control_ito_duality]], for any
+Combining [[main.statement.partial_control_representation]] with [[main.statement.partial_control_ito_duality]], for any
 
 $$
 \eta\in L^2_{\mathcal{F}_T}(\Omega;E_j),

@@ -1,8 +1,8 @@
 uid: obj_20260611_f023
-name: main.eq.lr_control_estimate
+name: main.estimate.lr_control_estimate
 kind: math
 role: claim
-display_as: equation
+display_as: estimate
 importance: supporting
 title: Control estimate on one Lebeau-Robbiano subinterval
 status: needs_check

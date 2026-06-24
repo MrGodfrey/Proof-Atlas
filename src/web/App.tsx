@@ -25,7 +25,7 @@ import { ACTIVE_STATUS, STATUS_COLORS } from "../core/constants";
 import { edgeTargets } from "../core/edgeUtils";
 import { renderMarkdownBlock } from "../core/render";
 import { deriveRouteProofTree, type ProofTreeNode } from "../core/routeProofTree";
-import { resolveRoute, type ResolvedRouteNode, type RouteDiagnostic } from "../core/routeResolver";
+import { resolveRoute, type ResolvedRoute, type ResolvedRouteNode, type RouteDiagnostic } from "../core/routeResolver";
 import { isObjectCardExpanded, nextObjectExpansionState } from "./cardExpansion";
 import { ignoresObjectLinkTarget, objectLinkAction, shouldAutoScrollFocusedObject, type ObjectLinkArea, type ObjectLinkGesture } from "./interactions";
 import { relationLabel, sortRelationRows } from "./relations";
@@ -34,6 +34,7 @@ import type {
   AtlasProblem,
   AtlasView,
   BodyFile,
+  EdgeRef,
   NormalizedGraph,
   NormalizedObject,
   ObjectKind,
@@ -50,6 +51,7 @@ type ReferenceSelection = {
   kind: BodyFile["blocks"][number]["kind"];
   excerpt: string;
 };
+
 type RouteExportCommandResponse = {
   command?: string;
 };
@@ -1864,6 +1866,99 @@ function ViewPane(props: {
   );
 }
 
+type RouteContextRow = {
+  node: ResolvedRouteNode;
+  labels: string[];
+};
+
+type RouteContextGroup = {
+  key: string;
+  title: string;
+  rows: RouteContextRow[];
+};
+
+type RelationRow = {
+  label: string;
+  target: NormalizedObject;
+  derived?: boolean;
+};
+
+type RelationSection = {
+  key: string;
+  title: string;
+  rows: RelationRow[];
+};
+
+function uniqueRelationLabels(labels: string[]): string[] {
+  return sortRelationRows([...new Set(labels)].map((label) => ({ label }))).map((row) => row.label);
+}
+
+function routeContextLabels(route: ResolvedRoute, node: ResolvedRouteNode): string[] {
+  const incoming = route.edges
+    .filter((edge) => edge.target === node.object.name)
+    .map((edge) => edge.type);
+  return uniqueRelationLabels(incoming.length ? incoming : [node.inclusionClass]);
+}
+
+function routeContextGroupKey(row: RouteContextRow): string {
+  if (row.labels.includes("requires")) return "requires";
+  if (row.labels.includes("uses")) return row.node.object.display_as === "statement" || row.node.object.display_as === "estimate"
+    ? "statements"
+    : "uses";
+  if (row.labels.includes("cites") || row.node.object.kind === "note" || row.node.object.provenance !== "internal") return "sources";
+  return "other";
+}
+
+function routeContextGroupTitle(key: string): string {
+  if (key === "requires") return "Required Context";
+  if (key === "statements") return "Used Statements and Estimates";
+  if (key === "uses") return "Used Inputs";
+  if (key === "sources") return "Citation and Source Context";
+  return "Other Route Context";
+}
+
+function groupRouteContextNodes(route: ResolvedRoute, nodes: ResolvedRouteNode[]): RouteContextGroup[] {
+  const order = ["requires", "statements", "uses", "sources", "other"];
+  const groups = new Map<string, RouteContextRow[]>();
+  for (const node of nodes) {
+    const row: RouteContextRow = { node, labels: routeContextLabels(route, node) };
+    const key = routeContextGroupKey(row);
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  return order
+    .map((key) => ({ key, title: routeContextGroupTitle(key), rows: groups.get(key) ?? [] }))
+    .filter((group) => group.rows.length > 0);
+}
+
+function relationRowsForTargets(graph: NormalizedGraph, label: string, names: readonly string[] | undefined, derived = false): RelationRow[] {
+  return (names ?? [])
+    .map((name) => graph.objectsByName[name])
+    .filter((object): object is NormalizedObject => Boolean(object))
+    .map((target) => ({ label, target, derived }));
+}
+
+function relationRowsForEdgeRefs(graph: NormalizedGraph, label: string, refs: EdgeRef[] | undefined): RelationRow[] {
+  return relationRowsForTargets(graph, label, edgeTargets(refs));
+}
+
+function relationSectionsForObject(graph: NormalizedGraph, object: NormalizedObject): RelationSection[] {
+  const directSpecial = new Set(["requires", "uses", "proves"]);
+  const otherOutgoing: RelationRow[] = [];
+  for (const [label, refs] of Object.entries(object.edges)) {
+    if (directSpecial.has(label)) continue;
+    otherOutgoing.push(...relationRowsForEdgeRefs(graph, label, refs));
+  }
+  const incoming = Object.entries(object.reverseEdges)
+    .flatMap(([label, names]) => relationRowsForTargets(graph, label, names, true));
+  return [
+    { key: "requires", title: "Requires Context", rows: relationRowsForEdgeRefs(graph, "requires", object.edges.requires) },
+    { key: "uses", title: "Uses", rows: relationRowsForEdgeRefs(graph, "uses", object.edges.uses) },
+    { key: "proves", title: "Proves", rows: relationRowsForEdgeRefs(graph, "proves", object.edges.proves) },
+    { key: "other", title: "Other Outgoing Relations", rows: sortRelationRows(otherOutgoing) },
+    { key: "incoming", title: "Incoming Relations", rows: sortRelationRows(incoming) }
+  ].filter((section) => section.rows.length > 0);
+}
+
 function GeneratedRoutePane(props: {
   graph: NormalizedGraph;
   routeView: AtlasRouteView;
@@ -1881,6 +1976,10 @@ function GeneratedRoutePane(props: {
   const pendingClick = useRef<number | undefined>(undefined);
   const resolved = useMemo(() => resolveRoute(props.graph, props.routeView.route), [props.graph, props.routeView]);
   const proofTree = useMemo(() => deriveRouteProofTree(resolved, props.graph), [props.graph, resolved]);
+  const routeContextGroups = useMemo(
+    () => groupRouteContextNodes(resolved, proofTree.foundationNodes),
+    [proofTree.foundationNodes, resolved]
+  );
   const routeStatusLabel = proofTree.openNodes.length > 0
     ? `open at ${shortName(proofTree.openNodes[0].object.name)}${proofTree.openNodes.length > 1 ? ` +${proofTree.openNodes.length - 1}` : ""}`
     : resolved.closed && resolved.contentSufficient ? "closed" : "diagnostics";
@@ -2056,21 +2155,23 @@ function GeneratedRoutePane(props: {
     );
   };
 
-  const renderContextNode = (node: ResolvedRouteNode) => (
+  const renderContextNode = (row: RouteContextRow) => (
     <button
-      key={node.object.uid}
+      key={row.node.object.uid}
       type="button"
-      className={`generated-node-row inclusion-${node.inclusionClass} ${props.selectedUid === node.object.uid ? "selected" : ""}`}
-      data-object-name={node.object.name}
-      data-object-uid={node.object.uid}
-      onClick={(event) => handleGeneratedClick(event, node.object)}
-      onDoubleClick={(event) => handleGeneratedDoubleClick(event, node.object)}
+      className={`generated-node-row inclusion-${row.node.inclusionClass} ${props.selectedUid === row.node.object.uid ? "selected" : ""}`}
+      data-object-name={row.node.object.name}
+      data-object-uid={row.node.object.uid}
+      onClick={(event) => handleGeneratedClick(event, row.node.object)}
+      onDoubleClick={(event) => handleGeneratedDoubleClick(event, row.node.object)}
     >
-      <span className="status-dot" style={{ background: statusColor(node.object.status) }} />
-      <span className="generated-node-title">{node.object.title}</span>
-      <code>{shortName(node.object.name)}</code>
-      <span className="route-chip route-chip-class">{node.inclusionClass}</span>
-      <span className="route-chip route-chip-representation">{node.representation}</span>
+      <span className="status-dot" style={{ background: statusColor(row.node.object.status) }} />
+      <span className="generated-node-title-block">
+        <b>{row.node.object.title}</b>
+        <code>{row.node.object.name}</code>
+      </span>
+      <span className="route-chip route-chip-class">{row.node.object.display_as}</span>
+      <span className="route-chip route-chip-representation">{row.node.representation}</span>
     </button>
   );
 
@@ -2166,19 +2267,20 @@ function GeneratedRoutePane(props: {
           <div className="proof-tree">
             {renderTreeNode(proofTree.root)}
           </div>
-          {proofTree.foundationNodes.length > 0 && (
-            <details className="generated-context-section">
-              <summary>
-                <span className="proof-tree-toggle generated-context-toggle" aria-hidden="true">
-                  <ChevronDown size={14} />
-                </span>
-                <span className="generated-context-title">Foundation / context</span>
-                <code>{proofTree.foundationNodes.length} context</code>
-              </summary>
-              <div className="generated-node-list">
-                {proofTree.foundationNodes.map(renderContextNode)}
-              </div>
-            </details>
+          {routeContextGroups.length > 0 && (
+            <div className="generated-context-groups" aria-label="Route context">
+              {routeContextGroups.map((group) => (
+                <section className="generated-context-section generated-context-group" key={group.key}>
+                  <div className="generated-context-group-head">
+                    <span className="generated-context-title">{group.title}</span>
+                    <code>{group.rows.length}</code>
+                  </div>
+                  <div className="generated-node-list">
+                    {group.rows.map(renderContextNode)}
+                  </div>
+                </section>
+              ))}
+            </div>
           )}
         </div>
       ) : (
@@ -2819,12 +2921,7 @@ function FullObjectPage(props: {
   useEffect(() => {
     void props.ensureBody(props.object.uid);
   }, [props.ensureBody, props.object.uid]);
-  const uses = [...edgeTargets(props.object.edges.requires), ...edgeTargets(props.object.edges.uses), ...edgeTargets(props.object.edges.proves)]
-    .map((name) => props.graph.objectsByName[name])
-    .filter((object): object is NormalizedObject => Boolean(object));
-  const reverse = Object.entries(props.object.reverseEdges)
-    .flatMap(([label, names]) => (names ?? []).map((name) => ({ label, object: props.graph.objectsByName[name] })))
-    .filter((item): item is { label: string; object: NormalizedObject } => Boolean(item.object));
+  const relationSections = relationSectionsForObject(props.graph, props.object);
   return (
     <div className="full-page reading-shell" data-object-uid={props.object.uid}>
       <div className="breadcrumb">
@@ -2855,17 +2952,41 @@ function FullObjectPage(props: {
         onSelect={props.onOpenSide}
         onOpenPreview={props.onOpenPreview}
       />
-      <div className="context-grid">
-        <ContextColumn title="This object uses" items={uses} onOpen={props.onOpenSide} onPreview={props.onOpenPreview} />
-        <ContextColumn title="Used by / Proved by / Blocked by" items={reverse.map((item) => item.object)} onOpen={props.onOpenSide} onPreview={props.onOpenPreview} />
-      </div>
+      <RelationGrid sections={relationSections} onOpen={props.onOpenSide} onPreview={props.onOpenPreview} />
     </div>
   );
 }
 
-function ContextColumn(props: {
+function RelationGrid(props: {
+  sections: RelationSection[];
+  onOpen: (object: NormalizedObject) => void;
+  onPreview?: (object: NormalizedObject) => void;
+}) {
+  return (
+    <div className="context-grid">
+      {props.sections.length === 0 ? (
+        <section className="context-column">
+          <h3>Relations</h3>
+          <p className="muted">No relations.</p>
+        </section>
+      ) : props.sections.map((section) => (
+        <RelationColumn
+          key={section.key}
+          title={section.title}
+          rows={section.rows}
+          showRelationLabel={section.key === "other" || section.key === "incoming"}
+          onOpen={props.onOpen}
+          onPreview={props.onPreview}
+        />
+      ))}
+    </div>
+  );
+}
+
+function RelationColumn(props: {
   title: string;
-  items: NormalizedObject[];
+  rows: RelationRow[];
+  showRelationLabel?: boolean;
   onOpen: (object: NormalizedObject) => void;
   onPreview?: (object: NormalizedObject) => void;
 }) {
@@ -2906,15 +3027,22 @@ function ContextColumn(props: {
   return (
     <section className="context-column">
       <h3>{props.title}</h3>
-      {props.items.length === 0 ? <p className="muted">None.</p> : props.items.map((object) => (
+      {props.rows.length === 0 ? <p className="muted">None.</p> : props.rows.map((row) => (
         <button
-          key={object.uid}
-          data-object-uid={object.uid}
-          onClick={(event) => handleClick(event, object)}
-          onDoubleClick={(event) => handleDoubleClick(event, object)}
+          key={`${row.label}-${row.target.uid}-${row.derived ? "derived" : "direct"}`}
+          data-object-uid={row.target.uid}
+          onClick={(event) => handleClick(event, row.target)}
+          onDoubleClick={(event) => handleDoubleClick(event, row.target)}
         >
-          <span className="status-dot" style={{ background: statusColor(object.status) }} />
-          {object.title}
+          <span className="status-dot" style={{ background: statusColor(row.target.status) }} />
+          <span className="context-row-title">
+            <b>{row.target.title}</b>
+            <code>{shortName(row.target.name)}</code>
+          </span>
+          {props.showRelationLabel && (
+            <span className="route-chip route-chip-class">{relationLabel(row.label)}{row.derived ? " derived" : ""}</span>
+          )}
+          <span className="route-chip route-chip-representation">{row.target.display_as}</span>
         </button>
       ))}
     </section>
@@ -2937,12 +3065,7 @@ function ObjectOverlay(props: {
     void props.ensureBody(props.object.uid);
   }, [props.ensureBody, props.object.uid]);
 
-  const uses = [...edgeTargets(props.object.edges.requires), ...edgeTargets(props.object.edges.uses), ...edgeTargets(props.object.edges.proves)]
-    .map((name) => props.graph.objectsByName[name])
-    .filter((object): object is NormalizedObject => Boolean(object));
-  const reverse = Object.entries(props.object.reverseEdges)
-    .flatMap(([label, names]) => (names ?? []).map((name) => ({ label, object: props.graph.objectsByName[name] })))
-    .filter((item): item is { label: string; object: NormalizedObject } => Boolean(item.object));
+  const relationSections = relationSectionsForObject(props.graph, props.object);
 
   return (
     <div className="object-overlay" onClick={props.onClose}>
@@ -2979,9 +3102,8 @@ function ObjectOverlay(props: {
             onSelect={props.onSelect}
             onOpenPreview={props.onOpenPreview}
           />
-          <div className="context-grid overlay-context">
-            <ContextColumn title="This object uses" items={uses} onOpen={props.onSelect} onPreview={props.onOpenPreview} />
-            <ContextColumn title="Used by / Proved by / Blocked by" items={reverse.map((item) => item.object)} onOpen={props.onSelect} onPreview={props.onOpenPreview} />
+          <div className="overlay-context">
+            <RelationGrid sections={relationSections} onOpen={props.onSelect} onPreview={props.onOpenPreview} />
           </div>
         </div>
       </section>

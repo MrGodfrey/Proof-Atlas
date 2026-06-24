@@ -18,4 +18,4 @@ edges:
     - target: source.boyer_2010a.claim.partial_discrete_lr
     - target: main.model.backward_adjoint_system
     - target: main.setting.spectral_spaces
-    - target: main.eq.observability_spectral_bound
+    - target: main.estimate.observability_spectral_bound

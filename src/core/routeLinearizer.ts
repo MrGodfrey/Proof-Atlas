@@ -14,7 +14,7 @@ export interface LinearRoute {
 
 const GROUP_ORDER = [
   "settings",
-  "models",
+  "calculations",
   "boundaries",
   "claims",
   "proofs",
@@ -26,12 +26,18 @@ const GROUP_ORDER = [
 
 function groupForObject(object: NormalizedObject, targetName: string, decision: string): { key: string; title: string } {
   if (object.name === targetName) return { key: "target", title: "Target" };
-  if (decision === "boundary") return { key: "boundaries", title: "Imported Assumptions / Boundaries" };
+  if (decision === "boundary") return { key: "boundaries", title: "Accepted Inputs" };
   if (object.kind === "math" && ["setting", "notation", "definition", "assumption", "problem"].includes(object.role)) {
     return { key: "settings", title: "Definitions and Settings" };
   }
-  if (object.kind === "math" && ["model", "construction", "calculation"].includes(object.role)) {
-    return { key: "models", title: "Models, Constructions, and Calculations" };
+  if (object.kind === "math" && object.role === "model") {
+    return { key: "settings", title: "Definitions and Settings" };
+  }
+  if (
+    object.kind === "math"
+    && (["statement", "estimate"].includes(object.display_as) || ["construction", "calculation"].includes(object.role))
+  ) {
+    return { key: "calculations", title: "Statements, Estimates, and Calculations" };
   }
   if (object.kind === "math" && object.role === "claim") return { key: "claims", title: "Supporting Claims" };
   if (object.kind === "math" && ["proof", "proof_fragment"].includes(object.role)) return { key: "proofs", title: "Proofs and Proof Fragments" };

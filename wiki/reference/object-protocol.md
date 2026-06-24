@@ -172,7 +172,7 @@ external_context
 
 ## `display_as`
 
-控制网页展示样式，不改变对象身份，也不改变 route resolver 的核心逻辑。`role` 说明“它是什么”，`display_as` 说明“它在页面上以什么形式呈现”。
+控制网页展示样式。`role` 说明“它是什么”，`display_as` 说明“它在页面上以什么形式呈现”。对 `role: claim` 来说，`display_as: statement` 和 `display_as: estimate` 还表示这个 claim 是可引用输入，不是自动展开 proof tree 的 proof obligation。
 
 允许值：
 
@@ -183,7 +183,7 @@ setting
 notation
 definition
 assumption
-equation
+statement
 theorem
 lemma
 proposition
@@ -242,12 +242,12 @@ meeting_note
 |---|---|---|
 | 一个 `role: claim` 实际是主定理 | `display_as: theorem` | 让页面和导出标题符合数学读者预期。 |
 | 一个 `role: claim` 是引理 | `display_as: lemma` | 仍然是 claim，route 可为它找 proof，但页面显示为 lemma。 |
-| 一个 `role: claim` 是关键估计 | `display_as: estimate` | route resolver 不把 `estimate` 当成 obligation claim，因此不会自动为它找 proof；适合把公式型估计作为依赖材料。 |
-| 一个 `role: claim` 是等式或恒等式 | `display_as: equation` | 与 `estimate` 类似，强调它是可引用公式，不是需要单独证明路线的主 obligation。 |
+| 一个 `role: claim` 是可引用恒等式、公式性事实或命名陈述 | `display_as: statement` | 不把 TeX 公式编号当对象类型；强调这是 statement-level 输入，不自动找 proof tree。 |
+| 一个 `role: claim` 是关键估计 | `display_as: estimate` | 与 `statement` 类似，不自动作为 proof obligation；适合不等式、谱界、能量估计等依赖材料。 |
 | 一个 `role: model` 只是普通模型描述 | 省略或 `display_as: plain` | 避免页面上把模型误读成 theorem/definition。 |
 | 文献对象 | `kind: note`, `role: literature`, `display_as: literature_note` | 让右栏和导出把它视为来源材料。 |
 
-注意：proof obligation 的代码判据是 `kind: math`、`role: claim`，并且 `display_as` 不是 `equation` 或 `estimate`。因此 `plain`、`theorem`、`lemma`、`proposition`、`corollary`、`conjecture` claim 都可以作为 Proof Tree root；`display_as: equation` 或 `display_as: estimate` 只能作为引用材料或 context，不会作为 Generated View 根节点。
+注意：proof obligation 的代码判据是 `kind: math`、`role: claim`，并且 `display_as` 不是 `statement` 或 `estimate`。因此 `plain`、`theorem`、`lemma`、`proposition`、`corollary`、`conjecture` claim 都可以作为 Proof Tree root；`display_as: statement` 或 `display_as: estimate` 只能作为引用材料或 context，不会作为 Generated View 根节点。
 
 ## `importance`
 
@@ -456,7 +456,7 @@ statement representation 的抽取规则与 body 文件名有关：
 
 - 有 `statement.md` 时，`statement` 表示使用 `statement.md`。
 - `setting`、`notation`、`definition`、`model`、`construction`、`calculation` 没有 `statement.md` 时，可用第一个 body 文件作为 statement source。
-- `claim`、`problem`、`assumption`、`equation`、`proof`、`proof_fragment`、`note` 没有 `statement.md` 时，不能可靠导出为 statement。
+- `claim`、`problem`、`assumption`、`proof`、`proof_fragment`、`note` 没有 `statement.md` 时，不能可靠导出为 statement。
 
 ## `edges`
 

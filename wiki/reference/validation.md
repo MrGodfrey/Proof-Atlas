@@ -72,7 +72,7 @@ warning 不一定让普通构图失败，但会出现在网页顶部构建状态
 - `claim_uses_own_proof`：claim 的 `uses` 指向证明自己的 proof。
 - `claim_uses_dependency`：claim 写了证明依赖型 `uses`；通常应移动到对应 proof 的 `uses`。
 - `needs_confirmation`：route 有多个合理 proof 候选，resolver 使用了确定性默认选择，但建议人工确认。
-- `unsupported_proof_tree_target`：Generated View target 不是 proof-obligation claim。target 必须是 `kind: math`、`role: claim`，且 `display_as` 不是 `equation` 或 `estimate`。
+- `unsupported_proof_tree_target`：Generated View target 不是 proof-obligation claim。target 必须是 `kind: math`、`role: claim`，且 `display_as` 不是 `statement` 或 `estimate`。
 - `citation_bibfile_deprecated`：对象手写了 `citation.bibfile`；BibTeX 文件应由 `bib-registry.yml` 派生。
 - `unverified_external_dependency`：proof hard-uses 未核验外部结果，需要人工确认来源可信度。
 

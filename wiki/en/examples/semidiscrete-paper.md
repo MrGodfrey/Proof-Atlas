@@ -70,21 +70,21 @@ main.proof.observability uses source.boyer_2010a.claim.partial_discrete_lr
 
 In the current v1 model, statement context for claims is stored in `requires`; mathematical results actually used in proofs are stored in the corresponding proof's `uses`. Thus `main.claim.observability` only declares the model and spectral spaces needed to read the statement, while `main.proof.observability` records that it uses the external result `source.boyer_2010a.claim.partial_discrete_lr` from the Reference Atlas.
 
-## Equation Objects
+## Formula-Like Material
 
-Important equations are not kept as TeX labels. They are promoted to `display_as: equation` objects, for example:
+Important equations are not kept as TeX labels, and Proof Atlas no longer uses `equation` objects. They are promoted by meaning to statement, estimate, or calculation objects, for example:
 
 ```text
-main.eq.observability_spectral_bound
-main.eq.partial_control_representation
-main.eq.partial_control_ito_duality
-main.eq.lr_low_mode_cancellation
-main.eq.lr_control_estimate
-main.eq.lr_induction_product
-main.eq.lr_exponent_identities
+main.estimate.observability_spectral_bound
+main.statement.partial_control_representation
+main.statement.partial_control_ito_duality
+main.statement.lr_low_mode_cancellation
+main.estimate.lr_control_estimate
+main.estimate.lr_induction_product
+main.calculation.lr_exponent_identities
 ```
 
-Body text refers to these formulas with normal object links. The web UI renders equation links in a parenthesized style.
+Body text refers to these materials with normal object links. Forward/backward systems remain `role: model`; source-paper equation numbers belong in source locations or local labels, not in the Proof Atlas object type.
 
 ## Literature Relationships
 

@@ -1,8 +1,8 @@
 uid: obj_20260611_f024
-name: main.eq.lr_induction_product
+name: main.estimate.lr_induction_product
 kind: math
 role: claim
-display_as: equation
+display_as: estimate
 importance: supporting
 title: Induction product estimate for the iteration
 status: needs_check

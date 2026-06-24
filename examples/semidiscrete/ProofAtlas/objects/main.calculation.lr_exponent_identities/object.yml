@@ -1,8 +1,8 @@
 uid: obj_20260611_f025
-name: main.eq.lr_exponent_identities
+name: main.calculation.lr_exponent_identities
 kind: math
-role: claim
-display_as: equation
+role: calculation
+display_as: calculation
 importance: supporting
 title: Exponent identities for the iteration product
 status: needs_check

@@ -2,7 +2,6 @@ uid: obj_20260611_a103
 name: main.model.forward_semidiscrete_system
 kind: math
 role: model
-display_as: equation
 importance: background
 title: Forward controlled semi-discrete stochastic system
 status: checked

@@ -16,8 +16,8 @@ edges:
     - target: main.claim.partial_null_control
   uses:
     - target: main.construction.partial_control_duality
-    - target: main.eq.partial_control_representation
-    - target: main.eq.partial_control_ito_duality
+    - target: main.statement.partial_control_representation
+    - target: main.statement.partial_control_ito_duality
     - target: main.claim.observability
     - target: main.model.forward_semidiscrete_system
     - target: main.model.backward_adjoint_system

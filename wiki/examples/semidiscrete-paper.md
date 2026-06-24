@@ -74,21 +74,21 @@ proof 的 `uses`。因此 `main.claim.observability` 本身只声明读懂陈述
 而 `main.proof.observability` 负责记录它使用了 Reference Atlas 中的外部结果
 `source.boyer_2010a.claim.partial_discrete_lr`。
 
-## 公式对象
+## 公式性材料
 
-重要公式不保留 TeX label，而是升格成 `display_as: equation` 对象，例如：
+重要公式不保留 TeX label，也不使用 `equation` 对象。它们按语义升格成 statement、estimate 或 calculation 对象，例如：
 
 ```text
-main.eq.observability_spectral_bound
-main.eq.partial_control_representation
-main.eq.partial_control_ito_duality
-main.eq.lr_low_mode_cancellation
-main.eq.lr_control_estimate
-main.eq.lr_induction_product
-main.eq.lr_exponent_identities
+main.estimate.observability_spectral_bound
+main.statement.partial_control_representation
+main.statement.partial_control_ito_duality
+main.statement.lr_low_mode_cancellation
+main.estimate.lr_control_estimate
+main.estimate.lr_induction_product
+main.calculation.lr_exponent_identities
 ```
 
-正文通过普通对象链接引用这些公式。网页会把 equation 链接显示成圆括号样式。
+正文通过普通对象链接引用这些材料。前向/后向系统保持为 `role: model`；原文里的 equation number 只适合作为来源位置或对象内部本地编号，不作为 Proof Atlas 对象类型。
 
 ## 文献关系
 

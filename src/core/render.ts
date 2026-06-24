@@ -139,10 +139,10 @@ function compactName(name: string): string {
 
 function referenceLabel(meta: LinkTargetMeta): string {
   const short = compactName(meta.name);
-  if (meta.display_as === "equation" || meta.role === "model") {
+  if (meta.role === "model") {
     if (/\badjoint system\b/i.test(short)) return "adjoint system";
     if (/\bforward\b/i.test(short) && /\bsystem\b/i.test(short)) return "forward system";
-    return short.replace(/\bsemi discrete\b|\bsemidiscrete\b/gi, "").replace(/\s+/g, " ").trim() || "equation";
+    return short.replace(/\bsemi discrete\b|\bsemidiscrete\b/gi, "").replace(/\s+/g, " ").trim() || "model";
   }
   if (meta.title && meta.title.length <= 38) return meta.title;
   return short;
@@ -150,18 +150,14 @@ function referenceLabel(meta: LinkTargetMeta): string {
 
 function linkTextWithContext(text: string, meta?: LinkTargetMeta): string {
   if (!meta) return text;
-  if (meta.display_as === "equation") {
-    return text.startsWith("(") && text.endsWith(")") ? text : `(${text})`;
-  }
   if (meta.display_as === "literature_note" || meta.role === "literature") {
     return text.startsWith("[") && text.endsWith("]") ? text : `[${text}]`;
   }
   return text;
 }
 
-function linkWrapperKind(meta?: LinkTargetMeta): "equation" | "literature" | undefined {
+function linkWrapperKind(meta?: LinkTargetMeta): "literature" | undefined {
   if (!meta) return undefined;
-  if (meta.display_as === "equation") return "equation";
   if (meta.display_as === "literature_note" || meta.role === "literature") return "literature";
   return undefined;
 }

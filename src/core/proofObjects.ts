@@ -1,6 +1,6 @@
 import type { NormalizedObject } from "./types";
 
-const NON_OBLIGATION_CLAIM_DISPLAYS = new Set(["equation", "estimate"]);
+const NON_OBLIGATION_CLAIM_DISPLAYS = new Set(["statement", "estimate"]);
 
 export function isProofObligationObject(object: NormalizedObject | undefined): boolean {
   if (!object) return false;

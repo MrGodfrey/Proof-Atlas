@@ -172,7 +172,7 @@ Recommended usage:
 
 ## `display_as`
 
-Controls visual presentation in the web UI. It does not change object identity or the core route resolver semantics. `role` says what the object is; `display_as` says how it appears on the page.
+Controls visual presentation in the web UI. `role` says what the object is; `display_as` says how it appears on the page. For `role: claim`, `display_as: statement` and `display_as: estimate` also mark the claim as citable input rather than an automatic proof-tree obligation.
 
 Allowed values:
 
@@ -183,7 +183,7 @@ setting
 notation
 definition
 assumption
-equation
+statement
 theorem
 lemma
 proposition
@@ -242,12 +242,12 @@ When to override `display_as`:
 |---|---|---|
 | A `role: claim` is the main theorem | `display_as: theorem` | Matches mathematical reader expectations in pages and exports. |
 | A `role: claim` is a lemma | `display_as: lemma` | Still a claim, so routes can find proof, but displayed as lemma. |
-| A `role: claim` is a key estimate | `display_as: estimate` | Emphasizes formula material; it is not treated as an obligation claim for automatic proof search. |
-| A `role: claim` is an equation or identity | `display_as: equation` | Emphasizes citable formula material rather than a proof obligation. |
+| A `role: claim` is a citable identity, formula-like fact, or named statement | `display_as: statement` | Avoids treating TeX equation labels as object types; marks statement-level input without automatic proof search. |
+| A `role: claim` is a key estimate | `display_as: estimate` | Similar to `statement`, but for inequalities, spectral bounds, energy estimates, and related dependency material. |
 | A `role: model` is ordinary model prose | omit or `display_as: plain` | Avoids making model text look like a theorem or definition. |
 | Literature object | `kind: note`, `role: literature`, `display_as: literature_note` | Lets UI and export treat it as source material. |
 
-Note: the code predicate for a proof obligation is `kind: math`, `role: claim`, and `display_as` not equal to `equation` or `estimate`. Therefore `plain`, `theorem`, `lemma`, `proposition`, `corollary`, and `conjecture` claims can be Proof Tree roots; `display_as: equation` or `display_as: estimate` is reference/context material and cannot be a Generated View root.
+Note: the code predicate for a proof obligation is `kind: math`, `role: claim`, and `display_as` not equal to `statement` or `estimate`. Therefore `plain`, `theorem`, `lemma`, `proposition`, `corollary`, and `conjecture` claims can be Proof Tree roots; `display_as: statement` or `display_as: estimate` is reference/context material and cannot be a Generated View root.
 
 ## `importance`
 
@@ -451,7 +451,7 @@ Statement representation extraction depends on body filenames:
 
 - If `statement.md` exists, `statement` representation uses it.
 - For `setting`, `notation`, `definition`, `model`, `construction`, and `calculation`, when `statement.md` is absent, the first body file can be used as statement source.
-- For `claim`, `problem`, `assumption`, `equation`, `proof`, `proof_fragment`, and `note`, when `statement.md` is absent, statement export is not reliable.
+- For `claim`, `problem`, `assumption`, `proof`, `proof_fragment`, and `note`, when `statement.md` is absent, statement export is not reliable.
 
 ## `edges`
 

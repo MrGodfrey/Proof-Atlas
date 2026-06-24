@@ -6,6 +6,29 @@ This project follows the common open-source convention of grouping changes by
 version and release date, with user-facing changes organized as Added, Changed,
 Fixed, and Documentation.
 
+## [0.1.8] - 2026-06-24
+
+### Changed
+
+- Removed the `equation` display type from the object protocol. Reusable formula
+  material is now represented by its mathematical role, such as `statement`,
+  `estimate`, `calculation`, or `model`.
+- Updated the semidiscrete example to replace `main.eq.*` objects with
+  statement, estimate, and calculation objects.
+- Reworked generated-route context in the center pane into single-column
+  semantic groups derived from route relations.
+- Reworked object relation sections so full object pages and previews show
+  outgoing and incoming relation groups without duplicating the same route
+  context.
+- Updated route export wording for statement, estimate, and calculation
+  material.
+
+### Documentation
+
+- Updated the English and Chinese wiki pages for the new object protocol,
+  Markdown-link guidance, route/export behavior, validation rules, and
+  semidiscrete splitting guidance.
+
 ## [0.1.5] - 2026-06-24
 
 ### Added

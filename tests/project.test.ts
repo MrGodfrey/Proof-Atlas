@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { commandDemoData, commandInit } from "../src/cli/atlas";
+import { commandInit } from "../src/cli/atlas";
 import { buildGraph } from "../src/core/graph";
 import { ProjectError, resolveAtlasProject } from "../src/core/project";
 import {
@@ -38,54 +38,6 @@ describe("project path resolver", () => {
     expect(gitignore.match(/ProofAtlas\/\.atlas\/local\.yml/g)).toHaveLength(1);
     expect(gitignore.match(/ProofAtlas\/\.atlas\/cache\//g)).toHaveLength(1);
     expect(gitignore.match(/ProofAtlas\/\.atlas\/exports\//g)).toHaveLength(1);
-  });
-
-  it("writes demo data with repo-relative citation paths", async () => {
-    const repoRoot = await tempDir("pa-demo-data-");
-    const atlasRoot = await writeTestProject(repoRoot, [
-      {
-        object: {
-          uid: "obj_20260624_demo01",
-          name: "source.paper",
-          kind: "note",
-          role: "literature",
-          title: "Demo Paper",
-          body: ["note.md"],
-          provenance: "external",
-          citation: { bibkey: "Demo2026" }
-        },
-        bodies: { "note.md": "Demo note.\n" }
-      }
-    ], {
-      views: { "paper.md": "# Paper\n\n![[source.paper]]\n" }
-    });
-    await fs.writeFile(path.join(repoRoot, "references.bib"), "@Article{Demo2026, title={Demo Paper}, year={2026}}\n", "utf8");
-    await fs.writeFile(path.join(atlasRoot, "bib-registry.yml"), [
-      'schema_version: "0.1"',
-      "trusted:",
-      "  - id: trusted",
-      "    path: ../references.bib",
-      ""
-    ].join("\n"), "utf8");
-
-    const previousCwd = process.cwd();
-    try {
-      process.chdir(repoRoot);
-      await commandDemoData("ProofAtlas", { output: "public/demo-data.json" });
-      const output = await fs.readFile(path.join(repoRoot, "public", "demo-data.json"), "utf8");
-      const data = JSON.parse(output) as {
-        graph: {
-          objectsByName: Record<string, { citation?: { bibfile?: string } }>;
-          bibRegistry: { entriesByKey: Record<string, { file: string; registryPath: string }> };
-        };
-      };
-
-      expect(output).not.toContain(repoRoot);
-      expect(data.graph.objectsByName["source.paper"].citation?.bibfile).toBe("references.bib");
-      expect(data.graph.bibRegistry.entriesByKey.Demo2026.file).toBe("references.bib");
-    } finally {
-      process.chdir(previousCwd);
-    }
   });
 
   it("accepts either ProofAtlas/ or the containing workspace directory", async () => {

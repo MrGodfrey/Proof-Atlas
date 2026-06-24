@@ -49,4 +49,4 @@ $$
 u\in L^\infty_{\mathbb{F}}(0,T;L^2(\Omega;E_j)).
 $$
 
-This adapted control satisfies the representation identity [[main.eq.partial_control_representation]] and the control estimate in [[main.claim.partial_null_control]].
+This adapted control satisfies the representation identity [[main.statement.partial_control_representation]] and the control estimate in [[main.claim.partial_null_control]].
