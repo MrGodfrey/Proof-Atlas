@@ -106,6 +106,7 @@ const STATUS_OPTIONS: ObjectStatus[] = [
   "archived"
 ];
 const STATIC_DEMO_MODE = import.meta.env.VITE_PROOF_ATLAS_DEMO === "1";
+const HOSTED_WIKI_URL = "https://proof-atlas-demo.pages.dev/wiki/";
 
 type StaticDemoData = {
   graph: NormalizedGraph;
@@ -1478,7 +1479,12 @@ function TopBar(props: {
       <div className="top-spacer" />
       {props.buildFlash && <span className="build-flash">{props.buildFlash}</span>}
       {props.staticDemo ? (
-        <span className="demo-chip">Cloudflare demo</span>
+        <>
+          <span className="demo-chip">Cloudflare demo</span>
+          <a className="toolbar-button" href={HOSTED_WIKI_URL} title="Open the Proof Atlas wiki">
+            <NotebookText size={13} /> Wiki
+          </a>
+        </>
       ) : (
         <ProjectSwitcher
           open={props.projectOpen}
