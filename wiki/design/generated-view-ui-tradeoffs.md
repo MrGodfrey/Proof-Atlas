@@ -11,19 +11,22 @@ Generated View 从已有的 `views/*.route.yml` 文件打开：
 ```text
 .route.yml
     -> Resolver
-    -> Resolved dependency slice
-       -> Graph projection
-       -> Linear projection
+    -> Resolved proof route
+       -> Proof Tree
+       -> optional Narrative note
 ```
 
-图是 route resolver 的输出，不是浏览器创建或保存 route 的输入。
+Generated View 只服务于 proof tree：target 必须是 proof-obligation claim，网页第一眼回答
+“这个 claim 当前由哪个 proof 支撑”。旧版通用依赖视角不再作为网页 Generated View 保留。
+
+Narrative 只读取与 target 或 selected proof `related_to` 的普通 note 对象；没有 note 时显示空态，不自动生成解释文本。
 
 Web UI 不应提供这些写入能力：
 
 - 选择 proof 分支；
 - 切换依赖是否纳入；
 - 编辑 `boundary`；
-- 拖拽节点并保存排序；
+- 拖拽或重排 proof tree 并保存排序；
 - 写入 `.route.yml`；
 - 导出并写入文件。
 
@@ -49,7 +52,7 @@ Web UI 不应提供这些写入能力：
 ## 延后方案
 
 交互式组织仍然有价值。后续版本可以允许浏览器侧临时覆盖 representation mode、
-boundary choice 或 proof choice，并实时显示 token 估算。
+boundary choice、proof choice 或 proof-tree 展开状态，并实时显示 token 估算。
 
 即便如此，未来 UI 也应避免直接写文件。它应该生成带有临时 override 的命令或请求。
 当前 CLI 已支持通过 `npm run atlas -- route` 保存 representation 和 boundary，例如：

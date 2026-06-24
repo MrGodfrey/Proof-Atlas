@@ -138,8 +138,6 @@ representation:
   source.boyer_2010a.claim.partial_discrete_lr: statement
 render:
   order: prerequisites_first
-  show_graph: true
-  show_status: true
   order_hints:
     - main.setting.probability_and_spaces
     - main.claim.null_controllability

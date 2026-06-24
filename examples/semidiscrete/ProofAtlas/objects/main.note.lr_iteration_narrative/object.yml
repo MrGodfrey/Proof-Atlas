@@ -1,0 +1,25 @@
+uid: obj_20260624_lrn1
+name: main.note.lr_iteration_narrative
+kind: note
+role: external_context
+display_as: note
+importance: supporting
+title: Narrative guide to the Lebeau-Robbiano route
+status: checked
+body:
+  - note.md
+summary: >-
+  A reader-facing narrative explanation of how the Lebeau-Robbiano route proves the main
+  null-controllability theorem and where the route reaches its external boundary.
+edges:
+  related_to:
+    - target: main.claim.null_controllability
+      reason: Explains the proof route for the target theorem.
+    - target: main.proof.lr_iteration
+      reason: Narrates the selected proof object used by the route.
+    - target: main.claim.partial_null_control
+      reason: Describes the controlled-window branch.
+    - target: main.claim.free_decay
+      reason: Describes the free-decay branch.
+    - target: main.claim.observability
+      reason: Identifies the analytic bottleneck.

@@ -13,15 +13,32 @@ boundaries:
   - source.boyer_2010a.claim.partial_discrete_lr
 representation:
   main.claim.null_controllability: full
+  main.model.forward_semidiscrete_system: statement
+  main.problem.control_question: statement
   main.proof.lr_iteration: full
-  main.claim.partial_null_control: statement
-  main.proof.partial_null_control: full
-  main.claim.observability: statement
-  main.proof.observability: full
-  main.claim.free_decay: statement
-  main.proof.free_decay: full
+  main.setting.spectral_spaces: statement
   source.boyer_2010a.claim.partial_discrete_lr: statement
+  main.calculation.lr_product_estimate: statement
+  main.claim.free_decay: statement
+  main.claim.observability: statement
+  main.claim.partial_null_control: statement
+  main.construction.lr_time_grid: statement
+  main.eq.lr_control_estimate: statement
+  main.eq.lr_low_mode_cancellation: statement
+  main.model.continuous_problem: statement
+  main.setting.discrete_mesh: statement
+  main.setting.domain_and_coefficients: statement
+  main.setting.grid_operator: statement
+  main.setting.probability_and_spaces: statement
+  main.eq.lr_exponent_identities: statement
+  main.eq.lr_induction_product: statement
+  main.model.backward_adjoint_system: statement
+  main.proof.free_decay: full
+  main.proof.observability: full
+  main.proof.partial_null_control: full
+  main.construction.partial_control_duality: statement
+  main.eq.observability_spectral_bound: statement
+  main.eq.partial_control_ito_duality: statement
+  main.eq.partial_control_representation: statement
 render:
   order: prerequisites_first
-  show_graph: true
-  show_status: true

@@ -82,5 +82,5 @@ After receiving `ProofAtlas local reference`, automation should follow these rul
 6. For a new proof, write `edges.proves -> claim` on the proof object, and write proof dependencies in the proof's `edges.uses`.
 7. A claim's statement context belongs in `edges.requires`; do not put proof dependencies directly in the claim's `uses`.
 8. Route `representation` can only be `full`, `statement`, `summary`, `reference`, or `omit`.
-9. Route hard dependencies must not be `omit`; in proof/meaning routes, hard dependencies usually need at least `statement`.
+9. Route hard dependencies must not be `omit`; in `proof` routes, hard dependencies usually need at least `statement`.
 10. After edits, run `npm run atlas -- check --strict <paper-root-or-ProofAtlas-root>`.

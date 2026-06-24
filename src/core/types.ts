@@ -337,14 +337,11 @@ export interface AtlasView {
   raw: string;
 }
 
-export type RouteProfile = "meaning" | "proof" | "audit" | "history";
+export type RouteProfile = "proof";
 export type RepresentationMode = "full" | "statement" | "summary" | "reference" | "omit";
 
 export const ROUTE_PROFILE_HELP: Record<RouteProfile, string> = {
-  meaning: "Explain the target by expanding hard requires dependencies; use for definitions, assumptions, models, and statement context.",
-  proof: "Resolve a proof route for the target; select proof objects for claims and expand their hard uses/requires dependencies.",
-  audit: "Use proof behavior and additionally include blocking issues as soft audit context.",
-  history: "Follow hard refines, replaces, and cites edges to reconstruct provenance, prior versions, and source context."
+  proof: "Generate a proof tree for a proof-obligation claim; select proof objects for claims and expand their hard uses/requires dependencies."
 };
 
 export const REPRESENTATION_HELP: Record<RepresentationMode, string> = {
@@ -357,8 +354,6 @@ export const REPRESENTATION_HELP: Record<RepresentationMode, string> = {
 
 export interface RouteRenderOptions {
   order?: "prerequisites_first";
-  show_graph?: boolean;
-  show_status?: boolean;
   order_hints?: string[];
 }
 

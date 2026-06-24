@@ -33,7 +33,7 @@ The top of the left column lists Markdown views in `views/`, for example:
 
 Clicking a view changes the center reading entry.
 
-If `views/` contains `*.route.yml`, the left column also lists Generated Views with a `Generated` label. Markdown views are manually organized reading entries. Generated Views are dependency slices resolved from route recipes.
+If `views/` contains `*.route.yml`, the left column also lists Generated Views with a `Generated` label. Markdown views are manually organized reading entries. Generated Views are Proof Trees resolved from proof route recipes.
 
 The lower part is the object tree. Objects are grouped by the dotted structure of `name`:
 
@@ -85,15 +85,15 @@ If an object comes from a mounted Reference Atlas, cards show `global references
 
 ## Center Column: Generated View
 
-Generated Views come from `views/*.route.yml`. They are not hand-written articles. The route resolver computes a dependency slice from the target object, proof choices, boundaries, and representation modes.
+Generated Views come from `views/*.route.yml`. They are not hand-written articles. The route resolver computes a Proof Tree from the proof-obligation target, proof choices, boundaries, and representation modes.
 
 Below the page title, the UI shows:
 
 ```text
-target object · profile · object count · estimated tokens
+target object · proof tree · route status
 ```
 
-This reports the target, route profile, included object count, and estimated token count for the current representation. Token estimates help reason about context cost; they do not measure mathematical complexity.
+This reports the target and whether the route is closed. The compact summary strip also shows target status, boundary count, proof-choice count, diagnostic count, and token estimate.
 
 Generated View has three copy buttons:
 
@@ -105,25 +105,27 @@ Generated View has three copy buttons:
 
 These buttons only copy text to the clipboard. The browser does not create routes, apply LLM suggestions, or export files directly.
 
-Generated View has two read-only projections:
+If the route has open nodes or diagnostics, the banner and diagnostic items appear at the top of Generated View.
+Object names and diagnostics that resolve to an object are clickable; clicking only selects the related object in the right column so you can inspect `Route inclusion`, and it does not modify the route file.
+
+Generated View has two read-only tabs:
 
 | Tab | Purpose |
 |---|---|
-| `Linear` | Linearizes the same dependency slice into a reading order. Use it to read and inspect the proof route. |
-| `Graph` | Draws the same dependency slice as a graph. Use it to inspect dependencies, witness paths, and boundaries. |
+| `Proof Tree` | Default view. It starts with the target claim and selected proof, then expands proof direct uses one layer at a time. |
+| `Narrative` | Shows note body text from notes `related_to` the target or selected proof; it shows an empty state if no note exists. |
 
-Graph controls:
+Proof Tree controls:
 
 | Control | Purpose |
 |---|---|
-| Search box | Highlight nodes by object name, title, role, decision, or representation. |
-| `-` / `+` | Zoom out or in. |
-| Scroll canvas | Move the graph. Browser Back restores tab, search, zoom, and position. |
-| Single-click node | Update the right column and show why the route included that object. |
-| Double-click node | Open the full object page. |
-| Click edge list | Select the target object of the edge and show details in the right column. |
+| Disclosure arrow | Expand or collapse only that tree node without changing the right-column selection. |
+| `Expand main path` | Expand the proof-tree main path. |
+| `Collapse all` | Collapse the whole proof tree. |
+| Single-click node body | Update the right column and show why the route included that object. |
+| Double-click node body | Open the full object page. |
 
-The graph is not an editor. Search, zoom, highlight, and click actions do not change the route file.
+The proof tree is not an editor. Expand, collapse, highlight, and click actions do not change the route file.
 
 ## Body Links
 
@@ -197,7 +199,8 @@ Double-clicking an object, clicking `Open full page`, or using the left object t
 
 The full object page is for reading one object in depth: body, metadata, used objects, reverse dependencies, proof relationships, and blocking issues.
 
-The `Paper view` button at the top returns to the current manual view. Browser Back returns to the previous actual history location.
+The `Paper view` button at the top returns to the paper/manual view that contains the object and scrolls to that object card.
+Browser Back returns to the previous actual history location.
 
 ## Interaction Rule Summary
 

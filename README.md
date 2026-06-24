@@ -2,7 +2,7 @@
 
 **Proof Atlas is a local-first workbench for mathematical research: write proofs in Markdown, describe the proof graph in YAML, and browse the whole project as a clickable atlas.**
 
-[中文 README](README.zh-CN.md) · [English wiki](wiki/en/README.md) · [Hosted demo](https://proof-atlas-demo.pages.dev) · [Example project](examples/semidiscrete/ProofAtlas)
+[中文 README](README.zh-CN.md) · [English wiki](wiki/en/README.md) · [Changelog](CHANGELOG.md) · [Hosted demo](https://proof-atlas-demo.pages.dev) · [Example project](examples/semidiscrete/ProofAtlas)
 
 **Try the live demo:** [https://proof-atlas-demo.pages.dev](https://proof-atlas-demo.pages.dev)
 

@@ -22,7 +22,7 @@ examples/reference-atlas/ProofAtlas
 4. 打开 `Gaps and Audits`：看适应性问题和历史失败路线。
 5. 打开 `Literature and Imported Results`：看所有 citation source。
 6. 打开 `Why null controllability holds`：查看由 `views/null_controllability.route.yml`
-   解析出的 Generated View，包括 Linear 和 Graph 两种投影。
+   解析出的 Generated View，包括 Proof Tree 和 Narrative。
 
 ## 关键对象
 

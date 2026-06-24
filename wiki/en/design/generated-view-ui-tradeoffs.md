@@ -9,19 +9,21 @@ Generated View opens from existing `views/*.route.yml` files:
 ```text
 .route.yml
     -> Resolver
-    -> Resolved dependency slice
-       -> Graph projection
-       -> Linear projection
+    -> Resolved proof route
+       -> Proof Tree
+       -> optional Narrative note
 ```
 
-The graph is the output of the route resolver. It is not browser input for creating or saving a route.
+Generated View now serves proof trees only: the target must be a proof-obligation claim, and the first screen answers "which proof currently supports this claim." The old generic dependency views are no longer kept as web Generated View projections.
+
+Narrative only reads ordinary note objects that are `related_to` the target or selected proof. If no note exists, the tab shows an empty state and does not invent explanation text.
 
 The web UI should not provide these write features:
 
 - choosing proof branches
 - toggling whether dependencies are included
 - editing `boundary`
-- dragging nodes and saving order
+- dragging or reordering the proof tree and saving order
 - writing `.route.yml`
 - exporting and writing files
 
@@ -45,7 +47,7 @@ It also matches the current context goal. Cloud AI can often accept longer conte
 
 ## Deferred Direction
 
-Interactive organization is still valuable. Later versions may allow temporary browser-side overrides of representation mode, boundary choice, or proof choice while showing live token estimates.
+Interactive organization is still valuable. Later versions may allow temporary browser-side overrides of representation mode, boundary choice, proof choice, or proof-tree expansion while showing live token estimates.
 
 Even then, future UI should avoid directly writing files. It should generate commands or requests with temporary overrides.
 

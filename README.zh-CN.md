@@ -2,7 +2,7 @@
 
 **Proof Atlas 是一个本地优先的数学研究工作台：用 Markdown 写证明正文，用 YAML 描述证明对象图，再用本地网页把整篇研究变成可点击的 atlas。**
 
-[English README](README.md) · [中文维基](wiki/README.md) · [在线 Demo](https://proof-atlas-demo.pages.dev) · [示例项目](examples/semidiscrete/ProofAtlas)
+[English README](README.md) · [中文维基](wiki/README.md) · [更新日志](CHANGELOG.md) · [在线 Demo](https://proof-atlas-demo.pages.dev) · [示例项目](examples/semidiscrete/ProofAtlas)
 
 **在线体验：** [https://proof-atlas-demo.pages.dev](https://proof-atlas-demo.pages.dev)
 

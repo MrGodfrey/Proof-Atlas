@@ -340,8 +340,8 @@ function parseRepresentation(values: string[] | undefined): Record<string, Repre
 
 function parseProfile(value: string | undefined): RouteProfile {
   const profile = value ?? "proof";
-  if (!["meaning", "proof", "audit", "history"].includes(profile)) {
-    cliError(`Invalid profile ${profile}; expected meaning, proof, audit, or history.`, 2);
+  if (profile !== "proof") {
+    cliError(`Invalid profile ${profile}; expected proof.`, 2);
   }
   return profile as RouteProfile;
 }
@@ -391,9 +391,7 @@ function routeRecipeFromTarget(
     boundaries,
     representation,
     render: {
-      order: "prerequisites_first",
-      show_graph: true,
-      show_status: true
+      order: "prerequisites_first"
     }
   };
 }
@@ -729,7 +727,7 @@ async function main(): Promise<void> {
   program.command("route")
     .argument("<target-or-route>", "object name/uid or views/*.route.yml")
     .argument("[project]", "ProofAtlas directory or workspace directory")
-    .option("--profile <profile>", "meaning, proof, audit, or history")
+    .option("--profile <profile>", "proof")
     .option("--save <file>", "save a route recipe under the project")
     .option("--proof-choice <claim=proof>", "explicit claim to proof choice", collectOption, [])
     .option("--boundary <name>", "object boundary; may be repeated", collectOption, [])

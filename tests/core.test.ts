@@ -154,6 +154,54 @@ describe("Proof Atlas core", () => {
     expect(graph.problems.find((item) => item.code === "tex_macro_forbidden")).toBeUndefined();
   });
 
+  it("reports Markdown render blockers in object bodies", async () => {
+    const root = await tempDir("pa-markdown-render-");
+    const project = await writeTestProject(root, [
+      {
+        object: {
+          uid: "obj_20260611_aaaa",
+          name: "main.claim.a",
+          kind: "math",
+          role: "claim",
+          title: "A",
+          body: ["statement.md"]
+        },
+        bodies: {
+          "statement.md": [
+            "This display is valid.",
+            "$$",
+            "    a=b",
+            "$$",
+            "",
+            "\tThis paragraph will become code with $x$.",
+            "",
+            "\\[",
+            "x=y",
+            "\\]",
+            "",
+            "    $$",
+            "\\begin{aligned}",
+            "x&=y",
+            "\\end{aligned}",
+            "$$",
+            "",
+            "\\begin{aligned}",
+            "x&=y",
+            "\\end{aligned}"
+          ].join("\n")
+        }
+      }
+    ]);
+    const graph = await buildGraph(project);
+    const codes = graph.problems.map((item) => item.code);
+    expect(codes).toContain("markdown_indented_code_block");
+    expect(codes).toContain("markdown_indented_math_delimiter");
+    expect(codes).toContain("markdown_unsupported_display_delimiter");
+    expect(codes).toContain("markdown_tex_environment_outside_math");
+    expect(hasCheckErrors(graph.problems, false)).toBe(false);
+    expect(hasCheckErrors(graph.problems, true)).toBe(true);
+  });
+
   it("warns on uses edges to proof objects", async () => {
     const root = await tempDir("pa-cycle-");
     const project = await writeTestProject(root, [

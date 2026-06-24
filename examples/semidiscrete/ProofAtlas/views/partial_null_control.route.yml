@@ -23,9 +23,7 @@ representation:
   main.setting.grid_operator: statement
   main.setting.probability_and_spaces: statement
   main.proof.observability: full
-  source.boyer_2010a.claim.partial_discrete_lr: statement
   main.eq.observability_spectral_bound: statement
+  source.boyer_2010a.claim.partial_discrete_lr: statement
 render:
   order: prerequisites_first
-  show_graph: true
-  show_status: true

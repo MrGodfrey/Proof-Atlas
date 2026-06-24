@@ -32,15 +32,17 @@ npm run atlas -- check --strict examples/semidiscrete
 - hard `requires` / hard `uses` 投影中存在环
 - route 缺少 `uid`、`title` 或 `target`
 - route `type` 不是 `route`
-- route `profile` 不是 `meaning`、`proof`、`audit` 或 `history`
+- route `profile` 不是 `proof`
+- route target 不是 proof-obligation claim
 - route `target`、`proof_choices`、`boundaries`、`representation` 或 `render.order_hints` 引用不存在对象
 - route `claim -> proof` 选择不成立
 - route `representation` 值不是 `full`、`statement`、`summary`、`reference` 或 `omit`
-- proof/meaning route 中 hard dependency 被设置为 `omit` 或低于表示粒度下限
-- proof/meaning route 中 hard dependency 需要 `statement` 但无法按 v1 规则抽取
+- proof route 中 hard dependency 被设置为 `omit` 或低于表示粒度下限
+- proof route 中 hard dependency 需要 `statement` 但无法按 v1 规则抽取
 - Markdown 链接指向不存在对象
 - view 嵌入不存在对象
 - 对象正文中出现 `![[...]]`
+- 严格模式下，对象正文中出现 Markdown 渲染风险，例如缩进代码块、缩进的 `$$` 分隔符、未闭合 `$$`、孤立 `\[` / `\]` 或孤立 `[` / `]` 公式分隔符、以及出现在 `$$` 外的 TeX 数学环境
 - 对象正文中出现 TeX 宏定义 `\newcommand`、`\renewcommand` 或 `\def`
 - 普通项目中定义本地 `source.*` 对象
 - `source.*` 对象缺少 `citation.bibkey`
@@ -57,6 +59,11 @@ warning 不一定让普通构图失败，但会出现在网页顶部构建状态
 - `alias_reference`：仍在使用旧 alias；建议改成当前对象名。
 - `folder_name_mismatch`：对象目录名和 `object.yml` 里的 `name` 不一致；通常应使用 `npm run atlas -- rename` 修正。
 - `object_body_h1`：对象正文以一级标题开头；对象标题已经由 `object.yml` 提供，正文不应再写 H1。
+- `markdown_indented_code_block`：对象正文中的普通内容被 Markdown 解析为缩进代码块；通常是行首 tab 或 4 个空格导致，数学和链接不会正常渲染。
+- `markdown_indented_math_delimiter`：`$$` 分隔符以 tab 或 4 个空格开头，Markdown 不会把它识别为展示公式。
+- `markdown_unsupported_display_delimiter`：对象正文使用了孤立 `\[` / `\]` 或 `[` / `]` 作为展示公式分隔符；Proof Atlas 正文应使用 `$$...$$`。
+- `markdown_unclosed_display_math`：`$$` 展示公式块没有闭合。
+- `markdown_tex_environment_outside_math`：`\begin{...}` / `\end{...}` 数学环境出现在可识别的 `$$` 块外。
 - `embed_option_spacing`：`![[name]] {expanded}` 中 `{expanded}` 前多了空格，应写成 `![[name]]{expanded}`。
 - `status_kind_combo`：`kind` 和 `status` 组合不符合推荐用法。
 - `blocks_from_non_issue`：非 issue 对象写了 `blocks`。
@@ -65,7 +72,7 @@ warning 不一定让普通构图失败，但会出现在网页顶部构建状态
 - `claim_uses_own_proof`：claim 的 `uses` 指向证明自己的 proof。
 - `claim_uses_dependency`：claim 写了证明依赖型 `uses`；通常应移动到对应 proof 的 `uses`。
 - `needs_confirmation`：route 有多个合理 proof 候选，resolver 使用了确定性默认选择，但建议人工确认。
-- `profile_target_mismatch`：route profile 和 target role 不太匹配，例如对非 claim 对象强制使用 `proof` profile。
+- `unsupported_proof_tree_target`：Generated View target 不是 proof-obligation claim。target 必须是 `kind: math`、`role: claim`，且 `display_as` 不是 `equation` 或 `estimate`。
 - `citation_bibfile_deprecated`：对象手写了 `citation.bibfile`；BibTeX 文件应由 `bib-registry.yml` 派生。
 - `unverified_external_dependency`：proof hard-uses 未核验外部结果，需要人工确认来源可信度。
 
@@ -90,6 +97,26 @@ references:
 
 普通正文和数学环境中的宏定义会报错。对象正文应直接写可渲染的数学内容，不应携带 preamble 配置。
 
+## Markdown 渲染检查
+
+Proof Atlas 对象正文使用 `$...$` 渲染行内数学，使用独立的 `$$...$$` 块渲染展示数学。普通段落和 `$$` 分隔符不要以 tab 或 4 个空格开头；Markdown 会把它们当作缩进代码块，导致数学、对象链接和强调语法都不渲染。
+
+如果确实需要代码，请使用 fenced code block：
+
+````markdown
+```text
+code here
+```
+````
+
+AI 写完对象正文后，应运行：
+
+```bash
+npm run atlas -- check --strict <paper-root-or-ProofAtlas>
+```
+
+严格检查会把上述 Markdown 渲染风险作为需要修正的问题。
+
 ## 维护清单
 
 改对象时检查：
@@ -104,6 +131,7 @@ references:
 8. `views/*.route.yml` 中的 target、proof choices、boundary 和 representation 引用仍然有效。
 9. `status` 和 `kind` 组合合理。
 10. 不在对象正文中写 `![[...]]`。
-11. 不在对象正文数学环境中定义 TeX 宏。
-12. 若使用 `source.*` 对象，确认 Reference Atlas 已挂载，且相关 `citation.bibkey` 在 Bib registry 中。
-13. 提交前运行 `npm run atlas -- check --strict <paper-root>` 或 `npm run atlas -- check --strict <ProofAtlas path>`。
+11. 普通段落和 `$$` 分隔符没有行首 tab 或 4 空格缩进。
+12. 不在对象正文数学环境中定义 TeX 宏。
+13. 若使用 `source.*` 对象，确认 Reference Atlas 已挂载，且相关 `citation.bibkey` 在 Bib registry 中。
+14. 提交前运行 `npm run atlas -- check --strict <paper-root>` 或 `npm run atlas -- check --strict <ProofAtlas path>`。

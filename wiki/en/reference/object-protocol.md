@@ -247,7 +247,7 @@ When to override `display_as`:
 | A `role: model` is ordinary model prose | omit or `display_as: plain` | Avoids making model text look like a theorem or definition. |
 | Literature object | `kind: note`, `role: literature`, `display_as: literature_note` | Lets UI and export treat it as source material. |
 
-Note: `role: claim` with `display_as: theorem/lemma/proposition/corollary/conjecture` is treated as an obligation by the route resolver. `display_as: equation` or `display_as: estimate` is not automatically searched for a proof obligation.
+Note: the code predicate for a proof obligation is `kind: math`, `role: claim`, and `display_as` not equal to `equation` or `estimate`. Therefore `plain`, `theorem`, `lemma`, `proposition`, `corollary`, and `conjecture` claims can be Proof Tree roots; `display_as: equation` or `display_as: estimate` is reference/context material and cannot be a Generated View root.
 
 ## `importance`
 

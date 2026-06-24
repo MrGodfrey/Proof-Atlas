@@ -54,11 +54,13 @@ import type {
   ViewItem
 } from "./types";
 import { addUniqueEdge, edgeTargets, hardEdgeTargets } from "./edgeUtils";
+import { isProofTreeRoot } from "./proofObjects";
 import {
   findForbiddenTexMacros,
   parseInvalidEmbedOptionSpacing,
   parseMarkdownReferences
 } from "./markdownRefs";
+import { findMarkdownRenderIssues } from "./markdownLint";
 import { pathExists, relativePosix, isPlainObject, listFilesRecursive, toPosixPath } from "./pathUtils";
 import { problem, resetProblemCounter } from "./problems";
 import { expandHome, resolveAtlasProject } from "./project";
@@ -1224,6 +1226,17 @@ async function validateBodyContent(graph: NormalizedGraph): Promise<void> {
           strict: false
         }));
       }
+      for (const issue of findMarkdownRenderIssues(source)) {
+        graph.problems.push(problem({
+          severity: "warning",
+          code: issue.code,
+          message: issue.message,
+          path: relativeBodyPath,
+          objectUid: object.uid,
+          objectName: object.name,
+          strict: true
+        }));
+      }
       for (const ref of parseMarkdownReferences(source)) {
         if (ref.kind === "embed") {
           graph.problems.push(problem({
@@ -1391,15 +1404,13 @@ function parseViewItems(graph: NormalizedGraph, source: string, viewPath: string
   return items;
 }
 
-const ROUTE_PROFILES: RouteProfile[] = ["meaning", "proof", "audit", "history"];
+const ROUTE_PROFILES: RouteProfile[] = ["proof"];
 const REPRESENTATION_MODES: RepresentationMode[] = ["full", "statement", "summary", "reference", "omit"];
 
 function normalizeRouteRender(raw: unknown, graph: NormalizedGraph, viewPath: string): RouteView["render"] {
   if (!isPlainObject(raw)) return {};
   const render: RouteView["render"] = {};
   if (raw.order === "prerequisites_first") render.order = raw.order;
-  if (typeof raw.show_graph === "boolean") render.show_graph = raw.show_graph;
-  if (typeof raw.show_status === "boolean") render.show_status = raw.show_status;
   if (raw.order_hints !== undefined && (!Array.isArray(raw.order_hints) || raw.order_hints.some((item) => typeof item !== "string"))) {
     graph.problems.push(problem({
       severity: "error",
@@ -1526,6 +1537,16 @@ function normalizeRouteView(raw: unknown, viewPath: string, graph: NormalizedGra
       target: rawTarget,
       strict: false
     }));
+  } else if (!isProofTreeRoot(resolvedTarget)) {
+    graph.problems.push(problem({
+      severity: "error",
+      code: "unsupported_proof_tree_target",
+      message: "route target must be a math claim that is not displayed as equation or estimate.",
+      path: viewPath,
+      viewPath,
+      target: resolvedTarget.name,
+      strict: true
+    }));
   }
 
   const profile = ROUTE_PROFILES.includes(raw.profile as RouteProfile) ? raw.profile as RouteProfile : "proof";
@@ -1533,7 +1554,7 @@ function normalizeRouteView(raw: unknown, viewPath: string, graph: NormalizedGra
     graph.problems.push(problem({
       severity: "error",
       code: "invalid_route_profile",
-      message: `route profile must be one of ${ROUTE_PROFILES.join(", ")}.`,
+      message: `route profile must be ${ROUTE_PROFILES.join(", ")}.`,
       path: viewPath,
       viewPath,
       strict: true

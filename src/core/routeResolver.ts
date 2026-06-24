@@ -8,6 +8,7 @@ import type {
   RouteView
 } from "./types";
 import { edgeTargets, hardEdgeRefs, softEdgeRefs } from "./edgeUtils";
+import { isProofObligationObject } from "./proofObjects";
 
 export type RouteNodeRole = "obligation" | "support" | "source";
 export type RouteDecision = "expanded" | "boundary" | "unresolved";
@@ -123,18 +124,12 @@ const SUPPORT_ROLES = new Set([
   "counterexample"
 ]);
 
-function isObligationObject(object: NormalizedObject): boolean {
-  return object.kind === "math"
-    && object.role === "claim"
-    && !["equation", "estimate"].includes(object.display_as);
-}
-
 function resolveObject(graph: NormalizedGraph, nameOrUid: string): NormalizedObject | undefined {
   return graph.objectsByName[nameOrUid] ?? graph.objectsByUid[nameOrUid] ?? graph.objectsByUid[graph.aliases[nameOrUid]];
 }
 
 function nodeRole(object: NormalizedObject): RouteNodeRole {
-  if (isObligationObject(object)) return "obligation";
+  if (isProofObligationObject(object)) return "obligation";
   if (object.kind === "note" || object.provenance !== "internal") return "source";
   return "support";
 }
@@ -232,7 +227,7 @@ function tokenEstimate(object: NormalizedObject): TokenEstimateVector {
 }
 
 function representationFloor(profile: RouteProfile, hardness: "hard" | "soft"): RepresentationMode {
-  if ((profile === "proof" || profile === "meaning") && hardness === "hard") return "statement";
+  if (profile === "proof" && hardness === "hard") return "statement";
   return "reference";
 }
 
@@ -252,7 +247,6 @@ function suggestedRepresentation(
   if (object.name === targetName) return "full";
   if (selectedProof) return "full";
   if (hardness === "soft") return object.summary ? "summary" : "reference";
-  if (profile === "audit" || profile === "history") return "reference";
   if (object.kind === "math" && object.role === "claim") return "statement";
   if (object.kind === "math" && ["proof", "proof_fragment"].includes(object.role)) return "full";
   if (object.provenance !== "internal") return "statement";
@@ -291,7 +285,7 @@ function buildResolvedEdges(nodes: Map<string, MutableNode>): ResolvedRouteEdge[
 function isSpineCandidate(object: NormalizedObject): boolean {
   if (object.kind !== "math") return false;
   if (["proof", "proof_fragment", "construction", "calculation"].includes(object.role)) return true;
-  return isObligationObject(object);
+  return isProofObligationObject(object);
 }
 
 function computeSpineNames(
@@ -337,6 +331,28 @@ function openObjectNames(diagnostics: RouteDiagnostic[]): Set<string> {
       .map((item) => item.objectName ?? item.target)
       .filter((name): name is string => Boolean(name))
   );
+}
+
+function diagnosticKey(item: RouteDiagnostic): string {
+  return [
+    item.severity,
+    item.code,
+    item.objectName ?? "",
+    item.target ?? "",
+    item.message
+  ].join("\u0000");
+}
+
+function dedupeDiagnostics(diagnostics: RouteDiagnostic[]): RouteDiagnostic[] {
+  const seen = new Set<string>();
+  const out: RouteDiagnostic[] = [];
+  for (const item of diagnostics) {
+    const key = diagnosticKey(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
 }
 
 export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOptions | RouteView): ResolvedRoute {
@@ -472,7 +488,7 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
     for (const ref of hardEdgeRefs(object.edges.uses)) {
       const dependency = includeRef(object, ref, path, depth + 1, true);
       if (!dependency) continue;
-      if (isObligationObject(dependency)) {
+      if (isProofObligationObject(dependency)) {
         expandClaim(dependency, [...path, dependency.name], depth + 1, nextStack);
       } else {
         expandNonClaim(dependency, [...path, dependency.name], depth + 1, nextStack);
@@ -487,7 +503,7 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
     for (const ref of hardEdgeRefs(proof.edges.uses)) {
       const dependency = includeRef(proof, ref, path, depth + 1, true);
       if (!dependency) continue;
-      if (isObligationObject(dependency)) {
+      if (isProofObligationObject(dependency)) {
         expandClaim(dependency, [...path, dependency.name], depth + 1, stack);
       } else {
         expandNonClaim(dependency, [...path, dependency.name], depth + 1, stack);
@@ -533,49 +549,15 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
 
   include(target, [target.name], 0, "hard", true);
 
-  if (profile === "proof" || profile === "audit") {
-    if (isObligationObject(target)) {
-      expandClaim(target, [target.name], 0, new Set());
-    } else if (target.kind === "math" && ["proof", "proof_fragment"].includes(target.role)) {
-      for (const ref of hardEdgeRefs(target.edges.proves)) {
-        const claim = includeRef(target, ref, [target.name], 1);
-        if (claim) include(claim, [target.name, claim.name], 1, "hard");
-      }
-      expandProof(target, [target.name], 0, new Set());
-    } else {
-      diagnostics.push({
-        severity: "warning",
-        code: "profile_target_mismatch",
-        message: `proof profile is not the default fit for ${target.role}; resolving its hard requires/uses only.`,
-        objectName: target.name
-      });
-      expandNonClaim(target, [target.name], 0, new Set());
-    }
-  } else if (profile === "meaning") {
-    expandRequires(target, [target.name], 0, new Set());
+  if (isProofObligationObject(target)) {
+    expandClaim(target, [target.name], 0, new Set());
   } else {
-    const historyEdges: EdgeType[] = ["refines", "replaces", "cites"];
-    const visitHistory = (object: NormalizedObject, path: string[], depth: number, stack: Set<string>) => {
-      if (stack.has(object.name)) return;
-      const nextStack = new Set(stack);
-      nextStack.add(object.name);
-      for (const type of historyEdges) {
-        for (const ref of hardEdgeRefs(object.edges[type])) {
-          const dependency = includeRef(object, ref, path, depth + 1);
-          if (dependency) visitHistory(dependency, [...path, dependency.name], depth + 1, nextStack);
-        }
-      }
-    };
-    visitHistory(target, [target.name], 0, new Set());
-  }
-
-  if (profile === "audit") {
-    for (const node of [...nodes.values()]) {
-      for (const blockerName of node.object.reverseEdges.blocked_by ?? []) {
-        const blocker = graph.objectsByName[blockerName];
-        if (blocker) include(blocker, [target.name, node.object.name, blocker.name], node.depth + 1, "soft");
-      }
-    }
+    diagnostics.push({
+      severity: "error",
+      code: "unsupported_proof_tree_target",
+      message: "Proof tree target must be a math claim that is not displayed as equation or estimate.",
+      objectName: target.name
+    });
   }
 
   for (const node of [...nodes.values()]) {
@@ -610,7 +592,7 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
         objectName: node.object.name
       });
     }
-    if ((profile === "proof" || profile === "meaning") && node.hardness === "hard" && representation === "statement" && !hasStatementRepresentation(node.object)) {
+    if (profile === "proof" && node.hardness === "hard" && representation === "statement" && !hasStatementRepresentation(node.object)) {
       diagnostics.push({
         severity: "error",
         code: "missing_statement_representation",
@@ -635,7 +617,8 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
     };
   });
 
-  const openNames = openObjectNames(diagnostics);
+  const uniqueDiagnostics = dedupeDiagnostics(diagnostics);
+  const openNames = openObjectNames(uniqueDiagnostics);
   const resolvedNodes: ResolvedRouteNode[] = resolvedNodesWithoutClass.map((node) => {
     let inclusionClass: RouteInclusionClass = spineNames.has(node.object.name) ? "spine" : "vocabulary";
     if (node.decision === "boundary" || boundaries.has(node.object.name)) inclusionClass = "boundary";
@@ -644,8 +627,8 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
   }).sort((a, b) => a.depth - b.depth || a.object.name.localeCompare(b.object.name));
 
   const totalTokens = resolvedNodes.reduce((sum, node) => sum + node.marginalCost.current, 0);
-  const closed = !diagnostics.some((item) => ["error"].includes(item.severity) && item.code !== "representation_below_floor" && item.code !== "missing_statement_representation");
-  const contentSufficient = !diagnostics.some((item) => item.severity === "error");
+  const closed = !uniqueDiagnostics.some((item) => ["error"].includes(item.severity) && item.code !== "representation_below_floor" && item.code !== "missing_statement_representation");
+  const contentSufficient = !uniqueDiagnostics.some((item) => item.severity === "error");
 
   return {
     target,
@@ -656,7 +639,7 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
     selectedProofs,
     boundaries: [...boundaries],
     orderHints,
-    diagnostics,
+    diagnostics: uniqueDiagnostics,
     totalTokens,
     closed,
     contentSufficient

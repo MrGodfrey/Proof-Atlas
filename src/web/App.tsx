@@ -22,15 +22,16 @@ import {
 } from "lucide-react";
 import { ACTIVE_STATUS, STATUS_COLORS } from "../core/constants";
 import { edgeTargets } from "../core/edgeUtils";
-import { linearizeRoute } from "../core/routeLinearizer";
+import { deriveRouteProofTree, type ProofTreeNode } from "../core/routeProofTree";
 import { resolveRoute, type ResolvedRouteNode, type RouteDiagnostic } from "../core/routeResolver";
-import { objectLinkAction, type ObjectLinkArea, type ObjectLinkGesture } from "./interactions";
+import { isObjectCardExpanded, nextObjectExpansionState } from "./cardExpansion";
+import { ignoresObjectLinkTarget, objectLinkAction, shouldAutoScrollFocusedObject, type ObjectLinkArea, type ObjectLinkGesture } from "./interactions";
+import { relationLabel, sortRelationRows } from "./relations";
 import type {
   AtlasRouteView,
   AtlasProblem,
   AtlasView,
   BodyFile,
-  EdgeType,
   NormalizedGraph,
   NormalizedObject,
   ObjectKind,
@@ -59,14 +60,10 @@ type RouteState =
 
 type Toast = { text: string; title: string } | null;
 type CenterScrollMode = "top" | "preserve";
-type RoutePaneTab = "linear" | "graph";
+type RoutePaneTab = "tree" | "narrative";
 type LeftNavTab = "views" | "objects";
 type RoutePaneUiState = {
   tab?: RoutePaneTab;
-  graphQuery?: string;
-  graphScale?: number;
-  graphScrollLeft?: number;
-  graphScrollTop?: number;
 };
 type ResizeDrag = {
   side: "left" | "right";
@@ -159,7 +156,7 @@ function formatDemoReference(graph: NormalizedGraph, object: NormalizedObject, s
       `  excerpt: ${JSON.stringify(selection.excerpt)}`
     );
   }
-  return `${lines.join("\n")}\n`;
+  return lines.join("\n");
 }
 
 function defaultDetailWidth(): number {
@@ -221,13 +218,40 @@ function objectHref(object: NormalizedObject, side?: string): string {
   return `/object/${encodeURIComponent(object.uid)}${query ? `?${query}` : ""}`;
 }
 
+function objectForViewEmbed(item: ViewItem, graph: NormalizedGraph): NormalizedObject | undefined {
+  if (item.type !== "embed") return undefined;
+  return item.uid ? graph.objectsByUid[item.uid] : item.name ? graph.objectsByName[item.name] : graph.objectsByName[item.target];
+}
+
 function defaultObjectForView(view: AtlasView, graph: NormalizedGraph): NormalizedObject | undefined {
   for (const item of view.items) {
-    if (item.type !== "embed") continue;
-    const object = item.uid ? graph.objectsByUid[item.uid] : item.name ? graph.objectsByName[item.name] : graph.objectsByName[item.target];
+    const object = objectForViewEmbed(item, graph);
     if (object) return object;
   }
   return graph.objects[0];
+}
+
+function viewContainsObject(view: AtlasView, object: NormalizedObject, graph: NormalizedGraph): boolean {
+  return view.items.some((item) => objectForViewEmbed(item, graph)?.uid === object.uid);
+}
+
+function isPaperView(view: AtlasView): boolean {
+  const normalizedName = titleForPath(view.path).toLowerCase().replace(/[-_\s]+/g, "");
+  const normalizedTitle = view.title.toLowerCase().replace(/[-_\s]+/g, "");
+  return normalizedName === "paper" || normalizedTitle === "paper";
+}
+
+function paperViewForObject(graph: NormalizedGraph, object: NormalizedObject): AtlasView | undefined {
+  const paperView = graph.views.find(isPaperView);
+  if (paperView && viewContainsObject(paperView, object, graph)) return paperView;
+  return graph.views.find((view) => viewContainsObject(view, object, graph))
+    ?? paperView
+    ?? graph.views.find((view) => view.path === graph.config.default_view)
+    ?? graph.views[0];
+}
+
+function objectCardSelector(uid: string): string {
+  return `.object-card[data-object-uid="${uid.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"]`;
 }
 
 function titleForPath(path: string): string {
@@ -292,83 +316,6 @@ function formatTokenCount(value: number): string {
   return String(value);
 }
 
-type RouteGraphPosition = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  depth: number;
-};
-
-const ROUTE_EDGE_TYPES: EdgeType[] = ["requires", "uses", "proves", "blocks", "refines", "replaces", "cites", "related_to"];
-
-function routeEdgeKey(edge: { source: string; type: EdgeType; target: string }): string {
-  return `${edge.source}|${edge.type}|${edge.target}`;
-}
-
-function routeEdgeColor(type: EdgeType): string {
-  if (type === "requires") return "#4c6f93";
-  if (type === "uses") return "#6f7f4e";
-  if (type === "proves") return "#a05a3d";
-  if (type === "blocks") return "#b44242";
-  if (type === "refines" || type === "replaces") return "#7b63b8";
-  if (type === "cites") return "#7a6b58";
-  return "#8a867c";
-}
-
-function routeNodeAccent(node: ResolvedRouteNode, targetName: string): string {
-  if (node.inclusionClass === "open") return "#b44242";
-  if (node.inclusionClass === "boundary") return "#8b6f36";
-  if (node.object.name === targetName) return "#4d62ad";
-  if (node.inclusionClass === "vocabulary") return "#8a867c";
-  if (node.object.kind === "issue") return "#b44242";
-  if (node.object.kind === "note" || node.object.provenance !== "internal") return "#7a6b58";
-  if (node.object.kind === "math" && node.object.role === "claim") return "#3f7f6d";
-  if (node.object.kind === "math" && ["proof", "proof_fragment"].includes(node.object.role)) return "#a05a3d";
-  if (node.object.kind === "math" && ["model", "construction", "calculation"].includes(node.object.role)) return "#4c6f93";
-  return "#6f7f4e";
-}
-
-function routeNodeCategory(node: ResolvedRouteNode, targetName: string): string {
-  if (node.inclusionClass === "open") return "open";
-  if (node.inclusionClass === "boundary") return "boundary";
-  if (node.object.name === targetName) return "target";
-  if (node.inclusionClass === "vocabulary") return "context";
-  if (node.object.kind === "math") return node.object.role.replaceAll("_", " ");
-  return node.object.kind;
-}
-
-function routeGraphEdgePath(source: RouteGraphPosition, target: RouteGraphPosition): string {
-  const sourceCenterX = source.x + source.width / 2;
-  const sourceCenterY = source.y + source.height / 2;
-  const targetCenterX = target.x + target.width / 2;
-  const targetCenterY = target.y + target.height / 2;
-  const sameColumn = Math.abs(sourceCenterX - targetCenterX) < 24;
-
-  if (sameColumn) {
-    const down = targetCenterY >= sourceCenterY;
-    const startX = sourceCenterX;
-    const startY = source.y + (down ? source.height : 0);
-    const endX = targetCenterX;
-    const endY = target.y + (down ? 0 : target.height);
-    const bend = Math.max(42, Math.abs(endY - startY) / 2);
-    const controlY = down ? startY + bend : startY - bend;
-    return `M ${startX} ${startY} C ${startX + 70} ${controlY}, ${endX + 70} ${endY - (down ? bend : -bend)}, ${endX} ${endY}`;
-  }
-
-  const rightward = targetCenterX > sourceCenterX;
-  const startX = source.x + (rightward ? source.width : 0);
-  const endX = target.x + (rightward ? 0 : target.width);
-  const delta = Math.max(60, Math.abs(endX - startX) * 0.46);
-  const control1X = startX + (rightward ? delta : -delta);
-  const control2X = endX - (rightward ? delta : -delta);
-  return `M ${startX} ${sourceCenterY} C ${control1X} ${sourceCenterY}, ${control2X} ${targetCenterY}, ${endX} ${targetCenterY}`;
-}
-
-function relationLabel(key: string): string {
-  return key.replaceAll("_", " ").toUpperCase();
-}
-
 function escapeHtmlText(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -423,6 +370,7 @@ function linkedObjectFromTarget(target: EventTarget | null, graph: NormalizedGra
       ? target.parentElement
       : null;
   if (!targetElement) return undefined;
+  if (ignoresObjectLinkTarget(targetElement)) return undefined;
   const element = targetElement.closest("[data-object-name]") as HTMLElement | null;
   if (!element) return undefined;
   const object = graph.objectsByName[element.dataset.objectName ?? ""];
@@ -492,7 +440,7 @@ function LinkedProse(props: {
   return <div className={className} {...handlers}>{props.children}</div>;
 }
 
-function getSelectionForReference(): ReferenceSelection | undefined {
+function getSelectionForReference(): { file: string; block: string; kind: BodyFile["blocks"][number]["kind"]; excerpt: string } | undefined {
   const selection = window.getSelection();
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) return undefined;
   const range = selection.getRangeAt(0);
@@ -556,6 +504,7 @@ export default function App() {
   const [route, setRoute] = useState<RouteState>(() => parseRoute());
   const [bodyCache, setBodyCache] = useState<BodyCache>({});
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [treeFilter, setTreeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<Set<ObjectStatus>>(() => new Set(ACTIVE_STATUS));
   const [kindFilter, setKindFilter] = useState<Set<ObjectKind>>(() => new Set(KIND_OPTIONS));
@@ -574,6 +523,7 @@ export default function App() {
   const [overlayUid, setOverlayUid] = useState<string | null>(null);
   const [copiedUid, setCopiedUid] = useState<string | null>(null);
   const centerPaneRef = useRef<HTMLElement | null>(null);
+  const lastCenterFocusScrollKey = useRef<string | undefined>(undefined);
   const pendingObjectLinkClick = useRef<number | null>(null);
   const pendingCenterScroll = useRef<number | null>(null);
   const scrollWriteFrame = useRef<number | null>(null);
@@ -605,6 +555,8 @@ export default function App() {
       persistCenterScroll();
     });
   }, [persistCenterScroll]);
+  const centerFocusedUid = route.mode === "view" ? route.focus : undefined;
+  const centerFocusKey = route.mode === "view" && route.focus ? `${route.viewName}:${route.focus}` : undefined;
 
   useEffect(() => {
     if (typeof historyObject().paCenterScroll !== "number") persistCenterScroll(0);
@@ -643,6 +595,25 @@ export default function App() {
     pendingCenterScroll.current = null;
     if (centerPaneRef.current) centerPaneRef.current.scrollTop = nextScroll;
   }, [route, appState.mode]);
+
+  useLayoutEffect(() => {
+    if (!centerFocusedUid || !centerFocusKey) {
+      lastCenterFocusScrollKey.current = undefined;
+      return;
+    }
+    if (!shouldAutoScrollFocusedObject(lastCenterFocusScrollKey.current, centerFocusKey)) return;
+    const pane = centerPaneRef.current;
+    if (!pane) return;
+    const card = pane.querySelector<HTMLElement>(objectCardSelector(centerFocusedUid));
+    if (!card) return;
+    lastCenterFocusScrollKey.current = centerFocusKey;
+    const paneRect = pane.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    const headerVisible = cardRect.top >= paneRect.top && cardRect.top <= paneRect.bottom - 96;
+    if (headerVisible) return;
+    card.scrollIntoView({ block: "start", inline: "nearest" });
+    persistCenterScroll(pane.scrollTop);
+  }, [appState.mode, centerFocusKey, centerFocusedUid, persistCenterScroll]);
 
   useEffect(() => {
     const scrollTimers = new Map<Element, number>();
@@ -767,6 +738,19 @@ export default function App() {
         ? sideObject ?? currentResolvedRoute?.target
         : undefined;
 
+  const expansionScope = route.mode === "view" && currentView
+    ? `view:${currentView.path}`
+    : route.mode === "route" && currentRouteView
+      ? `route:${currentRouteView.path}`
+      : route.mode === "object" && fullObject
+        ? `object:${fullObject.uid}`
+        : "none";
+
+  useEffect(() => {
+    setExpanded(new Set());
+    setCollapsed(new Set());
+  }, [expansionScope]);
+
   useEffect(() => {
     if (!graph || !currentView || route.mode !== "view" || route.side || detailDismissed) return;
     if (window.innerWidth <= COMPACT_WIDTH) return;
@@ -836,6 +820,17 @@ export default function App() {
     const data = await response.json() as { files: BodyFile[] };
     setBodyCache((cache) => ({ ...cache, [uid]: data.files }));
   }, [bodyCache]);
+
+  const openPaperViewForObject = useCallback((object: NormalizedObject) => {
+    if (!graph) return;
+    const view = paperViewForObject(graph, object);
+    if (!view) return;
+    setFilterOpen(false);
+    setBuildOpen(false);
+    setDetailDismissed(false);
+    navigate(routeView(view, object.uid, object.uid));
+    void ensureBody(object.uid);
+  }, [ensureBody, graph, navigate]);
 
   const openSideObject = useCallback((object: NormalizedObject) => {
     setFilterOpen(false);
@@ -1037,6 +1032,7 @@ export default function App() {
     if (!response.ok || !data.graph) return data.error ?? "Unable to open project.";
     setBodyCache({});
     setExpanded(new Set());
+    setCollapsed(new Set());
     setDetailDismissed(false);
     setProjectOpen(false);
     setFilterOpen(false);
@@ -1142,7 +1138,7 @@ export default function App() {
               onSelect={selectObject}
               onOpenSide={openSideObject}
               onOpenFull={openFull}
-              onBack={() => currentView && navigate(routeView(currentView))}
+              onBack={() => openPaperViewForObject(fullObject)}
               onCopy={copyReference}
               copied={copiedUid === fullObject.uid}
               onOpenPreview={openOverlay}
@@ -1151,6 +1147,8 @@ export default function App() {
             <GeneratedRoutePane
               graph={graph}
               routeView={currentRouteView}
+              bodyCache={bodyCache}
+              ensureBody={ensureBody}
               selectedUid={sideObject?.uid}
               onSelect={selectObject}
               onOpenFull={openFull}
@@ -1162,7 +1160,9 @@ export default function App() {
               bodyCache={bodyCache}
               ensureBody={ensureBody}
               expanded={expanded}
+              collapsed={collapsed}
               setExpanded={setExpanded}
+              setCollapsed={setCollapsed}
               statusFilter={statusFilter}
               kindFilter={kindFilter}
               showArchived={showArchived}
@@ -1795,7 +1795,9 @@ function ViewPane(props: {
   bodyCache: BodyCache;
   ensureBody: (uid: string) => Promise<void>;
   expanded: Set<string>;
+  collapsed: Set<string>;
   setExpanded: (value: Set<string>) => void;
+  setCollapsed: (value: Set<string>) => void;
   statusFilter: Set<ObjectStatus>;
   kindFilter: Set<ObjectKind>;
   showArchived: boolean;
@@ -1824,152 +1826,59 @@ function ViewPane(props: {
 function GeneratedRoutePane(props: {
   graph: NormalizedGraph;
   routeView: AtlasRouteView;
+  bodyCache: BodyCache;
+  ensureBody: (uid: string) => Promise<void>;
   selectedUid?: string;
   onSelect: (object: NormalizedObject) => void;
   onOpenFull: (object: NormalizedObject) => void;
 }) {
   const routeUiKey = `proof-atlas:route-ui:${props.graph.root}:${props.routeView.path}`;
   const initialRouteUi = readRoutePaneUiState(routeUiKey);
-  const [tab, setTab] = useState<RoutePaneTab>(initialRouteUi.tab ?? "linear");
-  const [graphQuery, setGraphQuery] = useState(initialRouteUi.graphQuery ?? "");
-  const [graphScale, setGraphScale] = useState(initialRouteUi.graphScale ?? 1);
-  const [expandedWitnesses, setExpandedWitnesses] = useState<Set<string>>(() => new Set());
+  const [tab, setTab] = useState<RoutePaneTab>(initialRouteUi.tab === "narrative" ? "narrative" : "tree");
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(() => new Set());
   const pendingClick = useRef<number | undefined>(undefined);
-  const graphCanvasRef = useRef<HTMLDivElement | null>(null);
-  const pendingGraphScroll = useRef<{ left: number; top: number } | null>({
-    left: initialRouteUi.graphScrollLeft ?? 0,
-    top: initialRouteUi.graphScrollTop ?? 0
-  });
   const resolved = useMemo(() => resolveRoute(props.graph, props.routeView.route), [props.graph, props.routeView]);
-  const linear = useMemo(() => linearizeRoute(resolved), [resolved]);
-  const routeNodesByName = useMemo(() => new Map(resolved.nodes.map((node) => [node.object.name, node])), [resolved.nodes]);
-  const spineNodes = linear.nodes.filter((node) => node.inclusionClass === "spine");
-  const vocabularyNodes = linear.nodes.filter((node) => node.inclusionClass === "vocabulary");
-  const boundaryNodes = linear.nodes.filter((node) => node.inclusionClass === "boundary");
-  const openNodes = linear.nodes.filter((node) => node.inclusionClass === "open");
-  const mainGraphNodes = linear.nodes.filter((node) => node.inclusionClass !== "vocabulary");
-  const mainGraphNodeNames = new Set(mainGraphNodes.map((node) => node.object.name));
-  const visibleGraphEdges = resolved.edges.filter((edge) => mainGraphNodeNames.has(edge.source) && mainGraphNodeNames.has(edge.target));
-  const routeStatusLabel = openNodes.length > 0
-    ? `open at ${shortName(openNodes[0].object.name)}${openNodes.length > 1 ? ` +${openNodes.length - 1}` : ""}`
+  const proofTree = useMemo(() => deriveRouteProofTree(resolved, props.graph), [props.graph, resolved]);
+  const routeStatusLabel = proofTree.openNodes.length > 0
+    ? `open at ${shortName(proofTree.openNodes[0].object.name)}${proofTree.openNodes.length > 1 ? ` +${proofTree.openNodes.length - 1}` : ""}`
     : resolved.closed && resolved.contentSufficient ? "closed" : "diagnostics";
-  const graphSearch = graphQuery.trim().toLowerCase();
-  const graphLayout = useMemo(() => {
-    const nodeWidth = 214;
-    const nodeHeight = 70;
-    const columnGap = 284;
-    const rowGap = 92;
-    const paddingX = 54;
-    const paddingY = 58;
-    const linearIndex = new Map(linear.nodes.map((node, index) => [node.object.name, index]));
-    const nodesByDepth = new Map<number, ResolvedRouteNode[]>();
-    for (const node of linear.nodes.filter((item) => item.inclusionClass !== "vocabulary")) {
-      nodesByDepth.set(node.depth, [...(nodesByDepth.get(node.depth) ?? []), node]);
-    }
-    const depths = [...nodesByDepth.keys()].sort((a, b) => a - b);
-    const positions = new Map<string, RouteGraphPosition>();
-    const columns: Array<{ depth: number; x: number; count: number }> = [];
-    let maxRows = 1;
-    for (const [depthIndex, depth] of depths.entries()) {
-      const nodes = [...(nodesByDepth.get(depth) ?? [])].sort((a, b) => {
-        return (linearIndex.get(a.object.name) ?? Number.MAX_SAFE_INTEGER) - (linearIndex.get(b.object.name) ?? Number.MAX_SAFE_INTEGER)
-          || a.object.name.localeCompare(b.object.name);
-      });
-      maxRows = Math.max(maxRows, nodes.length);
-      const x = paddingX + depthIndex * columnGap;
-      columns.push({ depth, x, count: nodes.length });
-      for (const [nodeIndex, node] of nodes.entries()) {
-        positions.set(node.object.name, {
-          x,
-          y: paddingY + nodeIndex * rowGap,
-          width: nodeWidth,
-          height: nodeHeight,
-          depth
-        });
-      }
-    }
-    return {
-      positions,
-      columns,
-      width: Math.max(980, paddingX * 2 + Math.max(1, depths.length - 1) * columnGap + nodeWidth),
-      height: Math.max(440, paddingY * 2 + Math.max(1, maxRows - 1) * rowGap + nodeHeight),
-      nodeWidth,
-      nodeHeight
-    };
-  }, [linear.nodes]);
-  const selectedRouteNode = props.selectedUid
-    ? resolved.nodes.find((node) => node.object.uid === props.selectedUid)
-    : undefined;
-  const activeRouteNode = selectedRouteNode ?? routeNodesByName.get(resolved.target.name);
-  const activeNodeName = activeRouteNode?.object.name;
-  const witnessPath = activeRouteNode?.witnessPaths[0] ?? [];
-  const witnessNodes = new Set(witnessPath);
-  const witnessEdges = new Set(witnessPath.slice(1).map((target, index) => `${witnessPath[index]}->${target}`));
-  const focusedEdges = activeNodeName
-    ? resolved.edges.filter((edge) => edge.source === activeNodeName || edge.target === activeNodeName)
-    : resolved.edges;
-  const focusedEdgeKeys = new Set(focusedEdges.map(routeEdgeKey));
-  const focusedNodeNames = new Set<string>(activeNodeName ? [activeNodeName] : []);
-  for (const edge of focusedEdges) {
-    focusedNodeNames.add(edge.source);
-    focusedNodeNames.add(edge.target);
-  }
-  const graphNodeMatches = (node: ResolvedRouteNode) => {
-    if (!graphSearch) return true;
-    return `${node.object.name} ${node.object.title} ${node.role} ${node.decision} ${node.representation}`.toLowerCase().includes(graphSearch);
+  const proofChoiceCount = Object.keys(resolved.selectedProofs).length;
+  const narrativeNotes = useMemo(() => {
+    const relatedNames = new Set([
+      resolved.target.name,
+      proofTree.selectedRootProof?.name
+    ].filter((name): name is string => Boolean(name)));
+    return props.graph.objects
+      .filter((object) => object.kind === "note" && object.role === "external_context")
+      .filter((object) => (object.edges.related_to ?? []).some((ref) => relatedNames.has(ref.target)))
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }, [props.graph.objects, proofTree.selectedRootProof?.name, resolved.target.name]);
+  const objectForDiagnostic = (item: RouteDiagnostic): NormalizedObject | undefined => {
+    const candidate = item.objectName ?? item.target;
+    if (!candidate) return undefined;
+    const aliasUid = props.graph.aliases[candidate];
+    return props.graph.objectsByName[candidate] ?? props.graph.objectsByUid[candidate] ?? (aliasUid ? props.graph.objectsByUid[aliasUid] : undefined);
   };
-  const witnessLabel = (name: string) => {
-    const object = props.graph.objectsByName[name];
-    return object ? object.title : shortName(name);
-  };
-  const toggleWitness = (name: string) => {
-    setExpandedWitnesses((current) => {
-      const next = new Set(current);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
+  const diagnosticItemKey = (item: RouteDiagnostic): string => {
+    return [item.severity, item.code, item.objectName ?? "", item.target ?? "", item.message].join(":");
   };
   useEffect(() => () => {
     if (pendingClick.current !== undefined) window.clearTimeout(pendingClick.current);
   }, []);
   useEffect(() => {
     const stored = readRoutePaneUiState(routeUiKey);
-    setTab(stored.tab ?? "linear");
-    setGraphQuery(stored.graphQuery ?? "");
-    setGraphScale(stored.graphScale ?? 1);
-    pendingGraphScroll.current = {
-      left: stored.graphScrollLeft ?? 0,
-      top: stored.graphScrollTop ?? 0
-    };
+    setTab(stored.tab === "narrative" ? "narrative" : "tree");
   }, [routeUiKey]);
   useEffect(() => {
-    writeRoutePaneUiState(routeUiKey, { tab, graphQuery, graphScale });
-  }, [graphQuery, graphScale, routeUiKey, tab]);
-  useLayoutEffect(() => {
-    if (tab !== "graph" || !graphCanvasRef.current || !pendingGraphScroll.current) return;
-    graphCanvasRef.current.scrollLeft = pendingGraphScroll.current.left;
-    graphCanvasRef.current.scrollTop = pendingGraphScroll.current.top;
-    pendingGraphScroll.current = null;
-  }, [graphLayout.height, graphLayout.width, graphScale, routeUiKey, tab]);
-  useLayoutEffect(() => {
-    if (tab !== "graph" || !graphCanvasRef.current || !activeNodeName) return;
-    const position = graphLayout.positions.get(activeNodeName);
-    if (!position) return;
-    const canvas = graphCanvasRef.current;
-    const left = clamp(
-      (position.x + position.width / 2) * graphScale - canvas.clientWidth / 2,
-      0,
-      Math.max(0, canvas.scrollWidth - canvas.clientWidth)
-    );
-    const top = clamp(
-      (position.y + position.height / 2) * graphScale - canvas.clientHeight / 2,
-      0,
-      Math.max(0, canvas.scrollHeight - canvas.clientHeight)
-    );
-    canvas.scrollTo({ left, top });
-    writeRoutePaneUiState(routeUiKey, { graphScrollLeft: left, graphScrollTop: top });
-  }, [activeNodeName, graphLayout.height, graphLayout.positions, graphScale, routeUiKey, tab]);
+    writeRoutePaneUiState(routeUiKey, { tab });
+  }, [routeUiKey, tab]);
+  useEffect(() => {
+    setExpandedNodes(new Set(proofTree.defaultExpandedNodeIds));
+  }, [proofTree.defaultExpandedNodeIds, routeUiKey]);
+  useEffect(() => {
+    if (tab !== "narrative") return;
+    for (const note of narrativeNotes) void props.ensureBody(note.uid);
+  }, [narrativeNotes, props.ensureBody, tab]);
   const clearPendingClick = () => {
     if (pendingClick.current !== undefined) {
       window.clearTimeout(pendingClick.current);
@@ -2000,6 +1909,14 @@ function GeneratedRoutePane(props: {
     event.preventDefault();
     props.onSelect(object);
   };
+  const toggleProofTreeNode = (id: string) => {
+    setExpandedNodes((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   const copyCommand = async (command: string) => {
     await navigator.clipboard?.writeText(command).catch(() => undefined);
   };
@@ -2013,86 +1930,78 @@ function GeneratedRoutePane(props: {
     `Cloud context: ${exportCommand}`
   ].join("\n");
 
-  const renderNode = (node: ReturnType<typeof linearizeRoute>["nodes"][number]) => {
-    const witness = node.witnessPaths[0] ?? [node.object.name];
-    const parentName = witness.length > 1 ? witness[witness.length - 2] : undefined;
-    const parent = parentName ? props.graph.objectsByName[parentName] : undefined;
-    const expanded = expandedWitnesses.has(node.object.name);
-    const fullPathTitle = witness.map(witnessLabel).join(" -> ");
-    const witnessTail = witness.length > 4 ? witness.slice(-4) : witness;
-    const collapsedWitnessPrefix = witnessTail.length < witness.length;
+  const renderTreeNode = (node: ProofTreeNode): ReactNode => {
+    const hasChildren = node.children.length > 0;
+    const expanded = expandedNodes.has(node.id);
+    const roleLabel = node.role.replaceAll("_", " ");
     return (
       <div
-        key={node.object.uid}
-        role="button"
-        tabIndex={0}
-        className={`generated-node-row inclusion-${node.inclusionClass} ${props.selectedUid === node.object.uid ? "selected" : ""}`}
-        data-object-name={node.object.name}
-        data-object-uid={node.object.uid}
-        onClick={(event) => handleGeneratedClick(event, node.object)}
-        onDoubleClick={(event) => handleGeneratedDoubleClick(event, node.object)}
-        onKeyDown={(event) => handleGeneratedKeyDown(event, node.object)}
+        key={node.id}
+        className={`proof-tree-node depth-${node.depth} role-${node.role} ${props.selectedUid === node.object.uid ? "selected" : ""}`}
+        style={{ "--proof-tree-depth": node.depth } as CSSProperties}
       >
-        <span className="status-dot" style={{ background: statusColor(node.object.status) }} />
-        <span className="generated-node-title">{node.object.title}</span>
-        <code>{shortName(node.object.name)}</code>
-        <span className="route-chip route-chip-class" title="Route inclusion class">{node.inclusionClass}</span>
-        <span className="route-chip route-chip-decision" title="Route decision">{node.decision}</span>
-        <span className="route-chip route-chip-representation" title="Cloud export representation">{node.representation}</span>
-        <button
-          className="witness-toggle"
-          aria-label={`${expanded ? "Collapse" : "Expand"} witness path for ${node.object.title}`}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            toggleWitness(node.object.name);
-          }}
-          onDoubleClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
+        <div
+          className="proof-tree-row"
+          data-object-name={node.object.name}
+          data-object-uid={node.object.uid}
         >
-          <ChevronDown size={13} className={expanded ? "open" : ""} />
-        </button>
-        <div className={`generated-witness ${expanded ? "expanded" : ""}`} title={fullPathTitle}>
-          <span className="generated-witness-summary">
-            {parent ? `← ${shortName(parent.name)}` : "route root"} · depth {node.depth}
-          </span>
-          {expanded && (
-            <span className="generated-witness-trail">
-              {collapsedWitnessPrefix && (
-                <span className="generated-witness-segment">
-                  <b>...</b>
-                  <i>→</i>
-                </span>
-              )}
-              {witnessTail.map((name, index) => (
-                <span className="generated-witness-segment" key={`${node.object.uid}-${name}-${index}`}>
-                  {index > 0 && <i>→</i>}
-                  <b>{truncateLabel(witnessLabel(name), index === witnessTail.length - 1 ? 34 : 26)}</b>
-                </span>
-              ))}
+          <button
+            className="proof-tree-toggle"
+            type="button"
+            data-object-link-ignore="true"
+            disabled={!hasChildren}
+            aria-label={`${expanded ? "Collapse" : "Expand"} ${node.object.title}`}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              toggleProofTreeNode(node.id);
+            }}
+            onDoubleClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+          >
+            {hasChildren && <ChevronDown size={14} className={expanded ? "open" : ""} />}
+          </button>
+          <button
+            type="button"
+            className="proof-tree-content"
+            onClick={(event) => handleGeneratedClick(event, node.object)}
+            onDoubleClick={(event) => handleGeneratedDoubleClick(event, node.object)}
+            onKeyDown={(event) => handleGeneratedKeyDown(event, node.object)}
+          >
+            <span className="status-dot" style={{ background: statusColor(node.object.status) }} />
+            <span className="proof-tree-title">
+              <b>{node.object.title}</b>
+              <code>{node.object.name}</code>
             </span>
-          )}
+            <span className="route-chip route-chip-class">{node.object.display_as}</span>
+            <span className={`route-chip route-chip-decision role-${node.role}`}>{roleLabel}</span>
+            {node.routeNode && <span className="route-chip route-chip-representation">{node.routeNode.representation}</span>}
+          </button>
         </div>
+        {expanded && hasChildren && <div className="proof-tree-children">{node.children.map(renderTreeNode)}</div>}
       </div>
     );
   };
 
-  const renderNodeSection = (title: string, nodes: ResolvedRouteNode[], summary?: string) => {
-    if (nodes.length === 0) return null;
-    return (
-      <section className="generated-group">
-        <div className="generated-section-heading">
-          <h2>{title}</h2>
-          <code>{summary ?? `${nodes.length}`}</code>
-        </div>
-        <div className="generated-node-list">
-          {nodes.map(renderNode)}
-        </div>
-      </section>
-    );
-  };
+  const renderContextNode = (node: ResolvedRouteNode) => (
+    <button
+      key={node.object.uid}
+      type="button"
+      className={`generated-node-row inclusion-${node.inclusionClass} ${props.selectedUid === node.object.uid ? "selected" : ""}`}
+      data-object-name={node.object.name}
+      data-object-uid={node.object.uid}
+      onClick={(event) => handleGeneratedClick(event, node.object)}
+      onDoubleClick={(event) => handleGeneratedDoubleClick(event, node.object)}
+    >
+      <span className="status-dot" style={{ background: statusColor(node.object.status) }} />
+      <span className="generated-node-title">{node.object.title}</span>
+      <code>{shortName(node.object.name)}</code>
+      <span className="route-chip route-chip-class">{node.inclusionClass}</span>
+      <span className="route-chip route-chip-representation">{node.representation}</span>
+    </button>
+  );
 
   return (
     <div className="reading-shell generated-view">
@@ -2100,7 +2009,7 @@ function GeneratedRoutePane(props: {
       <div className="generated-heading">
         <div>
           <h1>{props.routeView.title}</h1>
-          <p className="view-subtitle"><code>{resolved.target.name}</code> · {resolved.profile} · {routeStatusLabel} · spine {spineNodes.length} / context {vocabularyNodes.length} · {resolved.nodes.length} objects · {resolved.totalTokens} tokens</p>
+          <p className="view-subtitle"><code>{resolved.target.name}</code> · proof tree · {routeStatusLabel}</p>
         </div>
         <div className="generated-actions">
           <button
@@ -2126,199 +2035,109 @@ function GeneratedRoutePane(props: {
           </button>
         </div>
       </div>
+      <div className="route-summary-strip" aria-label="Route summary">
+        <span><b>Route</b><code>{resolved.closed && resolved.contentSufficient ? "closed" : "open"}</code></span>
+        <span><b>Target status</b><code>{resolved.target.status}</code></span>
+        <span><b>Boundary</b><code>{resolved.boundaries.length}</code></span>
+        <span><b>Proof choices</b><code>{proofChoiceCount}</code></span>
+        <span><b>Diagnostics</b><code>{resolved.diagnostics.length}</code></span>
+        <span><b>Tokens</b><code>{formatTokenCount(resolved.totalTokens)}</code></span>
+      </div>
       <div className="segmented-control">
-        <button className={tab === "linear" ? "active" : ""} onClick={() => setTab("linear")}>Linear</button>
-        <button className={tab === "graph" ? "active" : ""} onClick={() => setTab("graph")}>Graph</button>
+        <button className={tab === "tree" ? "active" : ""} onClick={() => setTab("tree")}>Proof Tree</button>
+        <button className={tab === "narrative" ? "active" : ""} onClick={() => setTab("narrative")}>Narrative</button>
       </div>
 
-      {(openNodes.length > 0 || !resolved.contentSufficient) && (
+      {(proofTree.openNodes.length > 0 || !resolved.contentSufficient) && (
         <div className="route-open-banner">
           <AlertTriangle size={15} />
-          <span>{openNodes.length > 0 ? `Route is open at ${openNodes.map((node) => shortName(node.object.name)).join(", ")}.` : "Route has blocking diagnostics."}</span>
+          {proofTree.openNodes.length > 0 ? (
+            <span>
+              Route is open at{" "}
+              {proofTree.openNodes.map((node, index) => (
+                <span key={node.object.uid}>
+                  {index > 0 && ", "}
+                  <button type="button" onClick={() => props.onSelect(node.object)}>{shortName(node.object.name)}</button>
+                </span>
+              ))}
+              .
+            </span>
+          ) : (
+            <span>Route has blocking diagnostics.</span>
+          )}
         </div>
       )}
 
       {resolved.diagnostics.length > 0 && (
         <div className="route-diagnostics">
-          {resolved.diagnostics.map((item) => (
-            <div key={`${item.code}-${item.message}`} className={item.severity}>{item.code}: {item.message}</div>
-          ))}
+          {resolved.diagnostics.map((item) => {
+            const object = objectForDiagnostic(item);
+            const label = `${item.code}: ${item.message}`;
+            if (!object) {
+              return <div key={diagnosticItemKey(item)} className={item.severity}>{label}</div>;
+            }
+            return (
+              <button
+                key={diagnosticItemKey(item)}
+                type="button"
+                className={item.severity}
+                data-object-name={object.name}
+                data-object-uid={object.uid}
+                title={`Show ${object.title} in the detail panel`}
+                onClick={() => props.onSelect(object)}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {tab === "linear" ? (
-        <div className="generated-linear">
-          {renderNodeSection("Proof spine", spineNodes, `${spineNodes.length} spine`)}
-          {renderNodeSection("Boundaries", boundaryNodes, `${boundaryNodes.length} boundary`)}
-          {renderNodeSection("Open obligations", openNodes, `${openNodes.length} open`)}
-          {vocabularyNodes.length > 0 && (
+      {tab === "tree" ? (
+        <div className="generated-proof-tree">
+          <div className="proof-tree-actions">
+            <button className="toolbar-button" onClick={() => setExpandedNodes(new Set(proofTree.mainPathNodeIds))}>Expand main path</button>
+            <button className="toolbar-button" onClick={() => setExpandedNodes(new Set())}>Collapse all</button>
+          </div>
+          <div className="proof-tree">
+            {renderTreeNode(proofTree.root)}
+          </div>
+          {proofTree.foundationNodes.length > 0 && (
             <details className="generated-context-section">
               <summary>
-                <span>Definitions & vocabulary</span>
-                <code>{vocabularyNodes.length} context</code>
+                <span className="proof-tree-toggle generated-context-toggle" aria-hidden="true">
+                  <ChevronDown size={14} />
+                </span>
+                <span className="generated-context-title">Foundation / context</span>
+                <code>{proofTree.foundationNodes.length} context</code>
               </summary>
               <div className="generated-node-list">
-                {vocabularyNodes.map(renderNode)}
+                {proofTree.foundationNodes.map(renderContextNode)}
               </div>
             </details>
           )}
         </div>
       ) : (
-        <div className="generated-graph">
-          <div className="generated-graph-controls">
-            <label className="generated-graph-search">
-              <Search size={14} />
-              <input
-                value={graphQuery}
-                onChange={(event) => setGraphQuery(event.target.value)}
-                placeholder="Search route graph..."
-              />
-            </label>
-            <div className="generated-graph-zoom">
-              <button onClick={() => setGraphScale((value) => Math.max(0.75, Number((value - 0.15).toFixed(2))))}>-</button>
-              <span>{Math.round(graphScale * 100)}%</span>
-              <button onClick={() => setGraphScale((value) => Math.min(1.45, Number((value + 0.15).toFixed(2))))}>+</button>
-            </div>
-          </div>
-          <div
-            className="generated-graph-canvas"
-            data-graph-search={graphSearch ? "active" : "idle"}
-            ref={graphCanvasRef}
-            onScroll={(event) => {
-              writeRoutePaneUiState(routeUiKey, {
-                graphScrollLeft: event.currentTarget.scrollLeft,
-                graphScrollTop: event.currentTarget.scrollTop
-              });
-            }}
-          >
-            <svg
-              width={graphLayout.width * graphScale}
-              height={graphLayout.height * graphScale}
-              viewBox={`0 0 ${graphLayout.width} ${graphLayout.height}`}
-              role="img"
-              aria-label={`${props.routeView.title} dependency graph`}
-            >
-              <defs>
-                {ROUTE_EDGE_TYPES.map((type) => (
-                  <marker key={type} id={`route-arrow-${type}`} viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-                    <path d="M 0 0 L 10 5 L 0 10 z" fill={routeEdgeColor(type)} />
-                  </marker>
-                ))}
-              </defs>
-              {graphLayout.columns.map((column) => (
-                <g key={column.depth} className="route-graph-depth-label" transform={`translate(${column.x}, 28)`}>
-                  <text>Depth {column.depth}</text>
-                  <title>{column.count} object{column.count === 1 ? "" : "s"}</title>
-                </g>
-              ))}
-              <g className="route-graph-edges">
-                {visibleGraphEdges.map((edge) => {
-                  const source = props.graph.objectsByName[edge.source];
-                  const target = props.graph.objectsByName[edge.target];
-                  const sourceNode = source ? resolved.nodes.find((node) => node.object.uid === source.uid) : undefined;
-                  const targetNode = target ? resolved.nodes.find((node) => node.object.uid === target.uid) : undefined;
-                  const sourcePos = graphLayout.positions.get(edge.source);
-                  const targetPos = graphLayout.positions.get(edge.target);
-                  if (!sourcePos || !targetPos || !sourceNode || !targetNode) return null;
-                  const key = routeEdgeKey(edge);
-                  const focused = focusedEdgeKeys.has(key);
-                  const highlighted = focused || witnessEdges.has(`${edge.source}->${edge.target}`) || witnessEdges.has(`${edge.target}->${edge.source}`);
-                  const searchDimmed = Boolean(graphSearch) && !graphNodeMatches(sourceNode) && !graphNodeMatches(targetNode);
-                  const focusDimmed = Boolean(activeNodeName) && !focused;
-                  const dimmed = searchDimmed || focusDimmed;
-                  return (
-                    <path
-                      key={key}
-                      className={`route-graph-edge edge-${edge.type} ${highlighted ? "highlighted" : ""} ${dimmed ? "dimmed" : ""}`}
-                      d={routeGraphEdgePath(sourcePos, targetPos)}
-                      markerEnd={`url(#route-arrow-${edge.type})`}
-                      style={{ "--route-edge-color": routeEdgeColor(edge.type) } as CSSProperties}
-                    />
-                  );
-                })}
-              </g>
-              <g className="route-graph-nodes">
-                {mainGraphNodes.map((node) => {
-                  const position = graphLayout.positions.get(node.object.name);
-                  if (!position) return null;
-                  const selected = activeRouteNode?.object.uid === node.object.uid;
-                  const highlighted = witnessNodes.has(node.object.name);
-                  const neighbor = focusedNodeNames.has(node.object.name);
-                  const searchDimmed = Boolean(graphSearch) && !graphNodeMatches(node);
-                  const focusDimmed = Boolean(activeNodeName) && !neighbor && !highlighted;
-                  const dimmed = searchDimmed || focusDimmed;
-                  return (
-                    <g
-                      key={node.object.uid}
-                      className={`route-graph-node inclusion-${node.inclusionClass} ${selected ? "selected" : ""} ${neighbor ? "neighbor" : ""} ${highlighted ? "highlighted" : ""} ${dimmed ? "dimmed" : ""}`}
-                      transform={`translate(${position.x}, ${position.y})`}
-                      data-object-name={node.object.name}
-                      data-object-uid={node.object.uid}
-                      onClick={(event) => handleGeneratedClick(event, node.object)}
-                      onDoubleClick={(event) => handleGeneratedDoubleClick(event, node.object)}
-                      style={{ "--route-node-accent": routeNodeAccent(node, resolved.target.name) } as CSSProperties}
-                    >
-                      <title>{`${node.object.title} (${node.object.name})`}</title>
-                      <rect width={position.width} height={position.height} rx="7" />
-                      <rect className="route-graph-node-accent" width="5" height={position.height} rx="2.5" />
-                      <circle cx="17" cy="19" r="4" fill={statusColor(node.object.status)} />
-                      <text className="route-graph-node-title" x="29" y="22">{truncateLabel(node.object.title, 27)}</text>
-                      <text className="route-graph-node-name" x="14" y="41">{truncateLabel(shortName(node.object.name), 27)}</text>
-                      <text className="route-graph-node-mode" x="14" y="57">{routeNodeCategory(node, resolved.target.name)} · {node.representation}</text>
-                    </g>
-                  );
-                })}
-              </g>
-            </svg>
-          </div>
-          <div className="route-graph-legend">
-            {ROUTE_EDGE_TYPES.filter((type) => resolved.edges.some((edge) => edge.type === type)).map((type) => (
-              <span key={type}><i style={{ background: routeEdgeColor(type) }} />{type}</span>
-            ))}
-          </div>
-          {vocabularyNodes.length > 0 && (
-            <details className="route-context-drawer">
-              <summary>
-                <span>Definitions & vocabulary</span>
-                <code>{vocabularyNodes.length} context</code>
-              </summary>
-              <div className="route-context-list">
-                {vocabularyNodes.map(renderNode)}
-              </div>
-            </details>
+        <div className="generated-narrative">
+          {narrativeNotes.length === 0 ? (
+            <div className="empty-state">No narrative note is related to this route target or selected proof.</div>
+          ) : (
+            narrativeNotes.map((note) => (
+              <section className="narrative-note" key={note.uid} data-object-uid={note.uid}>
+                <div className="generated-section-heading">
+                  <h2>{note.title}</h2>
+                  <button type="button" className="toolbar-button" onClick={() => props.onSelect(note)}>Details</button>
+                </div>
+                <MarkdownBody
+                  graph={props.graph}
+                  object={note}
+                  files={props.bodyCache[note.uid]}
+                  onSelect={props.onSelect}
+                  onOpenPreview={props.onSelect}
+                />
+              </section>
+            ))
           )}
-          <div className="generated-edge-heading">
-            <span>Edges for</span>
-            <b>{activeRouteNode?.object.title ?? resolved.target.title}</b>
-            <code>{focusedEdges.length}</code>
-          </div>
-          <div className="generated-edge-list">
-            {focusedEdges.map((edge) => {
-              const source = props.graph.objectsByName[edge.source];
-              const target = props.graph.objectsByName[edge.target];
-              const sourceNode = source ? resolved.nodes.find((node) => node.object.uid === source.uid) : undefined;
-              const targetNode = target ? resolved.nodes.find((node) => node.object.uid === target.uid) : undefined;
-              const dimmed = Boolean(graphSearch) && sourceNode && targetNode && !graphNodeMatches(sourceNode) && !graphNodeMatches(targetNode);
-              const nextObject = activeNodeName === edge.target ? source : target ?? source;
-              return (
-                <button
-                  key={routeEdgeKey(edge)}
-                  className={`generated-edge-row edge-${edge.type} highlighted ${dimmed ? "dimmed" : ""}`}
-                  data-edge-source={edge.source}
-                  data-edge-target={edge.target}
-                  data-object-uid={nextObject?.uid}
-                  style={{ "--route-edge-color": routeEdgeColor(edge.type) } as CSSProperties}
-                  onClick={(event) => nextObject && handleGeneratedClick(event, nextObject)}
-                  onDoubleClick={(event) => nextObject && handleGeneratedDoubleClick(event, nextObject)}
-                >
-                  <span>{source?.title ?? edge.source}</span>
-                  <code>{edge.type}</code>
-                  <b>{target?.title ?? edge.target}</b>
-                  <em>{edge.strength}</em>
-                </button>
-              );
-            })}
-          </div>
         </div>
       )}
     </div>
@@ -2360,15 +2179,20 @@ function DashboardPane(props: Parameters<typeof ViewPane>[0]) {
   }, [props.ensureBody, question]);
 
   const toggleObject = (object: NormalizedObject, isExpanded: boolean) => {
-    const next = new Set(props.expanded);
-    if (next.has(object.uid) || (isExpanded && !props.expanded.has(object.uid))) next.delete(object.uid);
-    else next.add(object.uid);
+    const next = nextObjectExpansionState(object.uid, isExpanded, props.expanded, props.collapsed);
     if (!isExpanded) void props.ensureBody(object.uid);
-    props.setExpanded(next);
+    props.setExpanded(next.expanded);
+    props.setCollapsed(next.collapsed);
   };
 
   const renderCard = (object: NormalizedObject, forceExpanded = false) => {
-    const isExpanded = forceExpanded || props.expanded.has(object.uid) || defaultExpanded(object);
+    const isExpanded = isObjectCardExpanded({
+      collapsed: props.collapsed,
+      defaultExpanded: defaultExpanded(object),
+      expanded: props.expanded,
+      forceExpanded,
+      uid: object.uid
+    });
     return (
       <ObjectCard
         graph={props.graph}
@@ -2532,13 +2356,23 @@ function ViewItemRenderer(props: Parameters<typeof ViewPane>[0] & { item: ViewIt
   }
   if (!shouldShowByFilter(object, props.statusFilter, props.kindFilter, props.showArchived)) {
     return (
-      <button className="filtered-placeholder" onClick={() => props.setExpanded(new Set([...props.expanded, object.uid]))}>
+      <button className="filtered-placeholder" onClick={() => {
+        props.setExpanded(new Set([...props.expanded, object.uid]));
+        const nextCollapsed = new Set(props.collapsed);
+        nextCollapsed.delete(object.uid);
+        props.setCollapsed(nextCollapsed);
+      }}>
         <span className="status-dot" style={{ background: statusColor(object.status) }} />
         1 {object.status} object hidden - {shortName(object.name)} · show
       </button>
     );
   }
-  const isExpanded = props.expanded.has(object.uid) || defaultExpanded(object, props.item);
+  const isExpanded = isObjectCardExpanded({
+    collapsed: props.collapsed,
+    defaultExpanded: defaultExpanded(object, props.item),
+    expanded: props.expanded,
+    uid: object.uid
+  });
   return (
     <ObjectCard
       graph={props.graph}
@@ -2548,11 +2382,10 @@ function ViewItemRenderer(props: Parameters<typeof ViewPane>[0] & { item: ViewIt
       selected={props.selectedUid === object.uid}
       ensureBody={props.ensureBody}
       onToggle={() => {
-        const next = new Set(props.expanded);
-        if (next.has(object.uid) || (isExpanded && !props.expanded.has(object.uid))) next.delete(object.uid);
-        else next.add(object.uid);
+        const next = nextObjectExpansionState(object.uid, isExpanded, props.expanded, props.collapsed);
         if (!isExpanded) void props.ensureBody(object.uid);
-        props.setExpanded(next);
+        props.setExpanded(next.expanded);
+        props.setCollapsed(next.collapsed);
       }}
       onSelect={props.onSelect}
       onOpenSide={props.onOpenSide}
@@ -2839,21 +2672,22 @@ function RelationList(props: {
     clearPendingClick();
     props.onSelect(target);
   };
-  const rows: Array<{ label: string; target: NormalizedObject; derived: boolean }> = [];
+  const relationRows: Array<{ label: string; target: NormalizedObject; derived: boolean }> = [];
   for (const [label, refs] of Object.entries(props.object.edges)) {
     for (const target of edgeTargets(refs)) {
       const object = props.graph.objectsByName[target];
-      if (object) rows.push({ label, target: object, derived: false });
+      if (object) relationRows.push({ label, target: object, derived: false });
     }
   }
   for (const [label, targets] of Object.entries(props.object.reverseEdges)) {
     for (const target of targets ?? []) {
       const object = props.graph.objectsByName[target];
-      if (object && !(label === "related_to" && rows.some((row) => row.label === "related_to" && row.target.uid === object.uid))) {
-        rows.push({ label, target: object, derived: true });
+      if (object && !(label === "related_to" && relationRows.some((row) => row.label === "related_to" && row.target.uid === object.uid))) {
+        relationRows.push({ label, target: object, derived: true });
       }
     }
   }
+  const rows = sortRelationRows(relationRows);
   return (
     <div className="detail-section">
       <div className="detail-label">Relations</div>

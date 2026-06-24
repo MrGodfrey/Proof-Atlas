@@ -247,7 +247,7 @@ meeting_note
 | 一个 `role: model` 只是普通模型描述 | 省略或 `display_as: plain` | 避免页面上把模型误读成 theorem/definition。 |
 | 文献对象 | `kind: note`, `role: literature`, `display_as: literature_note` | 让右栏和导出把它视为来源材料。 |
 
-注意：`role: claim` 加 `display_as: theorem/lemma/proposition/corollary/conjecture` 会被 route resolver 视为 obligation；`display_as: equation` 或 `display_as: estimate` 不会作为 obligation 自动找 proof。
+注意：proof obligation 的代码判据是 `kind: math`、`role: claim`，并且 `display_as` 不是 `equation` 或 `estimate`。因此 `plain`、`theorem`、`lemma`、`proposition`、`corollary`、`conjecture` claim 都可以作为 Proof Tree root；`display_as: equation` 或 `display_as: estimate` 只能作为引用材料或 context，不会作为 Generated View 根节点。
 
 ## `importance`
 

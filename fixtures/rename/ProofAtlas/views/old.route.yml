@@ -3,7 +3,7 @@ uid: view_20260618_old
 type: route
 title: Old Claim Route
 target: main.claim.old
-profile: meaning
+profile: proof
 proof_choices: {}
 boundaries:
   - main.claim.old

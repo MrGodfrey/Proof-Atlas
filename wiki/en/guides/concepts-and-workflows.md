@@ -48,9 +48,9 @@ General rule: claims mostly use `requires`; proofs mostly use `proves` and `uses
 
 `views/*.md` files are Manual Views: hand-written reading entries, useful for paper-like reading.
 
-`views/*.route.yml` files are Generated Views: saved recipes containing a target, proof choices, boundaries, and representation modes. The resolver computes a dependency slice.
+`views/*.route.yml` files are Generated Views: saved recipes containing a proof-obligation target, proof choices, boundaries, and representation modes. The resolver computes a Proof Tree.
 
-Generated View graphs and linear lists are outputs, not editors. Clicking, searching, and zooming in the browser do not modify files.
+Generated View Proof Trees and Narrative tabs are outputs, not editors. Expanding, collapsing, or selecting nodes in the browser does not modify files.
 
 ### Local AI And Cloud AI Need Different Inputs
 
@@ -95,9 +95,9 @@ Useful controls:
 Goal: see which proofs, claims, settings, and calculations support a conclusion.
 
 1. Open the relevant Generated View, for example `Why null controllability holds`.
-2. Read `Linear` first: definitions, models, supporting claims, proofs, and target in dependency order.
-3. Switch to `Graph` to inspect dependency structure and boundaries.
-4. Single-click a node and inspect `Route inclusion` in the right column.
+2. Start with the `Proof Tree` target claim and selected proof.
+3. Use disclosure arrows to expand proof direct uses one layer at a time; use `Expand main path` only when you want the full route opened.
+4. Single-click a node body and inspect `Route inclusion` in the right column.
 5. Check these fields:
 
 | Field | What to check |
@@ -105,7 +105,7 @@ Goal: see which proofs, claims, settings, and calculations support a conclusion.
 | `decision` | Whether any node is `unresolved`. |
 | `witness path` | Why this node was included. |
 | `representation` | Whether hard dependencies have at least statement-level content. |
-| `diagnostics` | Proof-choice, statement, or profile issues. |
+| `diagnostics` | Proof-choice, statement, or proof-tree target issues. |
 | `marginal cost` | Where context can be downgraded if you need to reduce size. |
 
 6. Click `Route` to copy the CLI command and reproduce resolution in the terminal:
@@ -229,7 +229,7 @@ npm run atlas -- route main.claim.null_controllability \
 
 5. Return to the UI; the Generated View appears in the left column.
 
-The browser `Graph` helps read the route. To change proof choices, boundaries, or representation modes, edit the route file or use the CLI.
+The browser Proof Tree helps read the route. To change proof choices, boundaries, or representation modes, edit the route file or use the CLI.
 
 ### Scenario 7: Handle LLM Suggestions
 
@@ -285,6 +285,6 @@ npm run atlas -- check --strict <project>
 - Put proof dependencies on a proof's `uses`, not directly on the claim's `uses`.
 - A route answers "which route is current?"; it does not replace the object graph.
 - Boundaries are deliberate cut points and must be visible in export.
-- Hard dependencies in proof / meaning context cannot be reference-only.
+- Hard dependencies in proof routes cannot be reference-only.
 - The web UI is read-only; writes must be auditable in git diff.
 - Cloud AI needs materialized context; local AI needs stable references.

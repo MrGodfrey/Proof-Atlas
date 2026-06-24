@@ -1,14 +1,16 @@
 # Routes And Export
 
-A route is Proof Atlas's recipe for answering "starting from this object, what context is currently needed?"
+A route is Proof Atlas's recipe for answering "how is this proof-obligation claim currently proved?"
 
-The current implementation stores routes in `views/*.route.yml`. The web UI only reads and displays them; the CLI creates, resolves, and exports them.
+The current implementation stores routes in `views/*.route.yml`. The web UI reads them as Proof Trees; the CLI creates, resolves, and exports them.
 
 Code source of truth:
 
 - `src/core/types.ts`: `RouteProfile`, `RepresentationMode`, `RouteView`.
 - `src/core/graph.ts`: route YAML normalization and schema validation.
-- `src/core/routeResolver.ts`: profile expansion, proof choice, boundary, representation floors, token estimates.
+- `src/core/proofObjects.ts`: proof-obligation claim eligibility.
+- `src/core/routeResolver.ts`: proof expansion, proof choice, boundary, representation floors, token estimates.
+- `src/core/routeProofTree.ts`: projection from resolved route to the web Proof Tree.
 - `src/core/contextExporter.ts`: materialization rules for Markdown / manifest / JSON export.
 
 Current legal representation values are `full`, `statement`, `summary`, `reference`, and `omit`. Do not write `full_statement` or `full statement`.
@@ -39,8 +41,6 @@ representation:
 
 render:
   order: prerequisites_first
-  show_graph: true
-  show_status: true
   order_hints:
     - main.setting.probability_and_spaces
     - main.setting.domain_and_coefficients
@@ -54,14 +54,13 @@ Field meanings:
 | `uid` | Route identity. Missing value is a strict error, though code derives a filename fallback to continue graph build. |
 | `type` | Must be `route`. |
 | `title` | Left-column and Generated View title. Missing value is a strict error. |
-| `target` | Route root object, using object `name` or resolvable alias. |
-| `profile` | `meaning`, `proof`, `audit`, or `history`; missing values resolve as `proof`. |
+| `target` | Route root object. It must be a proof-obligation claim, using object `name` or resolvable alias. |
+| `profile` | Must be `proof`; missing values resolve as `proof`. |
 | `proof_choices` | Explicit mapping from claim name to proof object name. The proof must `proves` the claim. |
 | `boundaries` | Objects included but not expanded through outgoing hard dependencies. |
 | `representation` | Object name to `full`, `statement`, `summary`, `reference`, or `omit`. |
 | `render.order` | Currently only `prerequisites_first`. |
-| `render.show_graph` / `render.show_status` | Saved route rendering preferences; the current UI supports graph and status in Generated View. |
-| `render.order_hints` | Same-layer linearization hints; does not change dependency edges. |
+| `render.order_hints` | Same-layer ordering hints; does not change dependency edges and does not imply a Linear View. |
 
 `npm run atlas -- rename` rewrites `target`, `proof_choices`, `boundaries`, `representation`, and `render.order_hints` inside route files.
 
@@ -83,53 +82,42 @@ Default behavior when fields are omitted:
 - `profile` resolves as `proof` in code; write it explicitly in files.
 - `proof_choices` defaults to empty, so the resolver chooses by proof candidate ordering.
 - `boundaries` defaults to empty.
-- `representation` defaults to empty, so the resolver suggests modes from profile, hard/soft dependency status, object role, and selected proof.
-- `render` defaults to empty; the UI can still display the Generated View.
+- `representation` defaults to empty, so the resolver suggests modes from the proof route, hard/soft dependency status, object role, and selected proof.
+- `render` defaults to empty; the UI can still display the Proof Tree.
 
-## Profile Behavior
+## Proof Tree Behavior
 
-| profile | Current resolution behavior |
-|---|---|
-| `meaning` | Expands the transitive closure of target hard `requires`, stopping at boundaries. |
-| `proof` | If target is a claim, selects a proof, expands hard `uses` of that proof, recursively handles used claims, and expands hard `requires`. |
-| `proof` with proof target | Uses the proof object as root, includes the claim it `proves` as context, and expands the proof's hard `uses`. It does not seek a proof of the proof object. |
-| `audit` | Starts from proof route behavior and includes blocking issues as soft context. |
-| `history` | Expands along hard `refines`, `replaces`, and `cites` relations. |
+Generated View only supports `profile: proof`, and it generates a Proof Tree.
 
-The current implementation also includes direct soft `requires` / `uses` of objects already in the slice, but it does not transitively expand soft dependencies.
+A legal target must be a proof obligation:
 
-Profile selection:
-
-| Goal | Recommended profile | Reason |
-|---|---|---|
-| Help AI understand a definition, model, assumption, or theorem statement | `meaning` | Expands only hard `requires` needed for statement/definition meaning, without seeking proofs. |
-| Explain why a claim holds | `proof` | Selects or uses a specified proof and expands hard `uses`. |
-| Audit proof-route risk | `audit` | Adds issues that block the proof route. |
-| Trace old versions, replacement relations, or literature sources | `history` | Follows `refines`, `replaces`, and `cites`. |
-
-Examples:
-
-```yaml
-# Explain only symbols, spaces, and settings for the forward system.
-target: main.model.forward_semidiscrete_system
-profile: meaning
+```text
+kind: math
+role: claim
+display_as != equation
+display_as != estimate
 ```
 
-```yaml
-# Explain the proof route for the main result.
-target: main.claim.null_controllability
-profile: proof
-proof_choices:
-  main.claim.null_controllability: main.proof.lr_iteration
+Theorems, lemmas, propositions, corollaries, conjectures, and plain claims can be roots. `proof`,
+`proof_fragment`, `construction`, `calculation`, `definition`, `setting`, `model`, `equation`,
+`estimate`, `problem`, `note`, and `issue` cannot be Generated View roots.
+
+If a `profile: proof` target is not a proof obligation, the resolver emits
+`unsupported_proof_tree_target`; the web UI shows diagnostics instead of falling back to a generic dependency view.
+
+Proof Tree spine:
+
+```text
+claim
+  -> selected proof
+      -> hard uses: claim / construction / calculation / proof_fragment
+          -> if claim, selected proof recursively
+          -> if boundary or external accepted claim, leaf
+          -> if already expanded elsewhere, shared reference
 ```
 
-```yaml
-# Audit the main proof and include blocking issues.
-target: main.claim.null_controllability
-profile: audit
-```
-
-If `proof` profile is used on a non-claim object, code falls back to expanding hard `requires` / `uses` and emits a `profile_target_mismatch` warning.
+`setting`, `model`, `definition`, `notation`, `assumption`, `equation`, and `estimate`
+do not mix into the main tree. The web UI places them in the collapsed Foundation / context group or in the right-column relations.
 
 ## Proof Choice
 
@@ -232,11 +220,8 @@ Current floor rules:
 | profile | hard dependency floor | soft dependency floor |
 |---|---|---|
 | `proof` | `statement` | `reference` |
-| `meaning` | `statement` | `reference` |
-| `audit` | `reference` | `reference` |
-| `history` | `reference` | `reference` |
 
-Hard dependencies cannot be `omit`. In `proof` / `meaning`, if a hard dependency needs `statement` but the object has no extractable statement source, content-sufficiency diagnostics are emitted.
+Hard dependencies cannot be `omit`. In proof routes, if a hard dependency needs `statement` but the object has no extractable statement source, content-sufficiency diagnostics are emitted.
 
 Default suggestion rules:
 
@@ -246,7 +231,6 @@ Default suggestion rules:
 | selected proof | `full` |
 | soft dependency has `summary` | `summary` |
 | soft dependency has no `summary` | `reference` |
-| hard dependency in `audit` / `history` | `reference` |
 | hard claim dependency | `statement` |
 | hard proof / proof_fragment dependency | `full` |
 | external/imported hard object | `statement` |
@@ -311,7 +295,7 @@ Options:
 
 | Option | Purpose |
 |---|---|
-| `--profile <profile>` | Profile when creating a temporary route from an object target. |
+| `--profile <profile>` | Profile when creating a temporary route from an object target; currently only `proof`. |
 | `--save <file>` | Save the resolved route recipe inside the project. |
 | `--proof-choice <claim=proof>` | Explicit proof choice for a claim; repeatable. |
 | `--boundary <name>` | Set a boundary; repeatable. |
@@ -338,7 +322,7 @@ Local AI or scripts that edit routes should follow these rules:
 2. Use object `name` for `target`, `proof_choices`, `boundaries`, `representation`, and `render.order_hints`; do not use titles.
 3. When given a local reference, locate by `uid` first, then write the current `name`.
 4. New routes must include `schema_version: "0.1"`, `type: route`, `uid`, `title`, `target`, and `profile`.
-5. `profile` can only be `meaning`, `proof`, `audit`, or `history`.
+5. `profile` can only be `proof`.
 6. `representation` can only be `full`, `statement`, `summary`, `reference`, or `omit`.
 7. Do not set a hard dependency to `omit`.
 8. `proof_choices` can only select `role: proof` or `role: proof_fragment` objects that actually `proves` the corresponding claim.

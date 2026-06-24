@@ -1,13 +1,15 @@
 # Route 与导出
 
-Route 是 Proof Atlas 用来回答“从某个对象出发，当前需要哪些上下文”的配方。
-当前实现把 route 保存在 `views/*.route.yml`，网页只读取和展示它，CLI 负责创建、解析和导出。
+Route 是 Proof Atlas 用来回答“某个 proof-obligation claim 当前如何被证明”的配方。
+当前实现把 route 保存在 `views/*.route.yml`，网页只读取并展示 proof tree，CLI 负责创建、解析和导出。
 
 代码事实源：
 
 - `src/core/types.ts`：`RouteProfile`、`RepresentationMode`、`RouteView`。
 - `src/core/graph.ts`：route YAML 归一化和 schema 校验。
-- `src/core/routeResolver.ts`：profile 展开规则、proof 选择、boundary、representation 下限、token 估算。
+- `src/core/proofObjects.ts`：proof-obligation claim 判断。
+- `src/core/routeResolver.ts`：proof 展开规则、proof 选择、boundary、representation 下限、token 估算。
+- `src/core/routeProofTree.ts`：把 resolved route 投影成网页 Proof Tree。
 - `src/core/contextExporter.ts`：Markdown / manifest / JSON 导出的物化规则。
 
 注意：当前合法 representation 值是 `full`、`statement`、`summary`、`reference`、`omit`。不要写 `full_statement` 或 `full statement`。
@@ -38,8 +40,6 @@ representation:
 
 render:
   order: prerequisites_first
-  show_graph: true
-  show_status: true
   order_hints:
     - main.setting.probability_and_spaces
     - main.setting.domain_and_coefficients
@@ -53,14 +53,13 @@ render:
 | `uid` | route 身份；缺失会产生 strict error，但代码会用文件名生成 fallback 继续构图。 |
 | `type` | 必须是 `route`。 |
 | `title` | 左栏和 Generated View 标题；缺失会产生 strict error。 |
-| `target` | route 根对象，使用对象 `name` 或可解析 alias。 |
-| `profile` | `meaning`、`proof`、`audit`、`history`；缺失时按 `proof` 解析。 |
+| `target` | route 根对象，必须是 proof-obligation claim，使用对象 `name` 或可解析 alias。 |
+| `profile` | 只能是 `proof`；缺失时按 `proof` 解析。 |
 | `proof_choices` | claim name 到 proof object name 的显式选择；proof 必须 `proves` 该 claim。 |
 | `boundaries` | 明确纳入但不继续展开 outgoing hard dependencies 的对象。 |
 | `representation` | object name 到 `full`、`statement`、`summary`、`reference` 或 `omit`。 |
 | `render.order` | 当前只支持 `prerequisites_first`。 |
-| `render.show_graph` / `render.show_status` | 作为 route 渲染偏好保存；当前网页始终按 Generated View 支持图和状态展示。 |
-| `render.order_hints` | 同层线性化排序提示；不改变依赖边。 |
+| `render.order_hints` | 同层排序提示；不改变依赖边，也不暗示 Linear View。 |
 
 `npm run atlas -- rename` 会重写 route 文件里的 `target`、`proof_choices`、`boundaries`、
 `representation` 和 `render.order_hints`。
@@ -83,53 +82,42 @@ profile: proof
 - `profile` 在代码路径里缺省按 `proof` 解析；写文件时建议显式写出。
 - `proof_choices` 缺省为空，resolver 会按 proof 候选排序自动选择。
 - `boundaries` 缺省为空。
-- `representation` 缺省为空，resolver 会按 profile、hard/soft、对象角色和 selected proof 自动建议。
-- `render` 缺省为空，网页仍能显示 Generated View。
+- `representation` 缺省为空，resolver 会按 proof route、hard/soft、对象角色和 selected proof 自动建议。
+- `render` 缺省为空，网页仍能显示 Proof Tree。
 
-## Profile 行为
+## Proof Tree 行为
 
-| profile | 当前解析行为 |
-|---|---|
-| `meaning` | 展开 target 的 hard `requires` 传递闭包，遇到 boundary 停止。 |
-| `proof` | 如果 target 是 claim，选择 proof，展开 proof 的 hard `uses`，递归处理被使用的 claim；同时展开 hard `requires`。 |
-| `proof` with proof target | 以 proof 对象自身为 root，纳入它 `proves` 的 claim 作为上下文，并展开 proof 的 hard `uses`。不会为 proof 本身再找 proof。 |
-| `audit` | 在 proof route 基础上纳入阻塞它的 issue 作为 soft context。 |
-| `history` | 沿 hard `refines`、`replaces`、`cites` 展开历史和来源关系。 |
+Generated View 只支持 `profile: proof`，并生成一个 Proof Tree。
 
-当前实现还会把 slice 内对象的直接 soft `requires` / `uses` 纳入，但不会对 soft 依赖继续做传递闭包。
+合法 target 必须是 proof obligation：
 
-选择 profile 的规则：
-
-| 目标 | 推荐 profile | 原因 |
-|---|---|---|
-| 想让 AI 理解一个定义、模型、假设或 theorem statement | `meaning` | 只展开 statement/definition 所需的 hard `requires`，不寻找 proof。 |
-| 想解释一个 claim 为什么成立 | `proof` | 自动选择或使用指定 proof，并展开 proof 的 hard `uses`。 |
-| 想检查证明路线是否有风险 | `audit` | 在 proof route 基础上加入 `blocks` 它的 issue。 |
-| 想追踪旧版本、替代关系、文献来源 | `history` | 沿 `refines`、`replaces`、`cites` 展开。 |
-
-例子：
-
-```yaml
-# 只解释 forward system 的符号、空间和设定
-target: main.model.forward_semidiscrete_system
-profile: meaning
+```text
+kind: math
+role: claim
+display_as != equation
+display_as != estimate
 ```
 
-```yaml
-# 解释主结论的证明路线
-target: main.claim.null_controllability
-profile: proof
-proof_choices:
-  main.claim.null_controllability: main.proof.lr_iteration
+定理、引理、命题、推论、猜想和普通 claim 可以作为根节点。`proof`、`proof_fragment`、
+`construction`、`calculation`、`definition`、`setting`、`model`、`equation`、`estimate`、
+`problem`、`note` 和 `issue` 不能作为 Generated View 根节点。
+
+如果 `profile: proof` 的 target 不是 proof obligation，resolver 会给
+`unsupported_proof_tree_target`，网页只显示诊断，不再退化成通用依赖视图。
+
+Proof Tree 主干规则：
+
+```text
+claim
+  -> selected proof
+      -> hard uses: claim / construction / calculation / proof_fragment
+          -> if claim, selected proof recursively
+          -> if boundary or external accepted claim, leaf
+          -> if already expanded elsewhere, shared reference
 ```
 
-```yaml
-# 审计主证明，把阻塞 issue 也放进 context
-target: main.claim.null_controllability
-profile: audit
-```
-
-如果对非 claim 对象使用 `proof` profile，代码会退化为展开 hard `requires` / `uses`，并给 `profile_target_mismatch` warning。
+`setting`、`model`、`definition`、`notation`、`assumption`、`equation`、`estimate`
+等材料不混入主树；网页把它们放在折叠的 Foundation / context 组，或放在右栏关系中查看。
 
 ## Proof 选择
 
@@ -234,11 +222,8 @@ representation:
 | profile | hard dependency floor | soft dependency floor |
 |---|---|---|
 | `proof` | `statement` | `reference` |
-| `meaning` | `statement` | `reference` |
-| `audit` | `reference` | `reference` |
-| `history` | `reference` | `reference` |
 
-hard dependency 不能设为 `omit`。在 `proof` / `meaning` 中，如果 hard dependency 需要
+hard dependency 不能设为 `omit`。在 proof route 中，如果 hard dependency 需要
 `statement` 但对象没有可抽取 statement source，会产生内容充分性诊断。
 
 自动建议规则：
@@ -249,7 +234,6 @@ hard dependency 不能设为 `omit`。在 `proof` / `meaning` 中，如果 hard 
 | selected proof | `full` |
 | soft dependency 有 `summary` | `summary` |
 | soft dependency 没有 `summary` | `reference` |
-| `audit` / `history` 中的 hard dependency | `reference` |
 | hard claim dependency | `statement` |
 | hard proof / proof_fragment dependency | `full` |
 | external/imported hard object | `statement` |
@@ -316,7 +300,7 @@ npm run atlas -- route views/null_controllability.route.yml \
 
 | 选项 | 作用 |
 |---|---|
-| `--profile <profile>` | 从对象 target 临时创建 route 时使用的 profile。 |
+| `--profile <profile>` | 从对象 target 临时创建 route 时使用的 profile；当前只能是 `proof`。 |
 | `--save <file>` | 把解析后的 route recipe 保存到项目内。 |
 | `--proof-choice <claim=proof>` | 显式选择某个 claim 的 proof；可重复。 |
 | `--boundary <name>` | 设置 boundary；可重复。 |
@@ -345,7 +329,7 @@ selected proofs、boundaries、每个节点的 witness path 和 marginal cost。
 2. `target`、`proof_choices`、`boundaries`、`representation`、`render.order_hints` 优先使用对象 `name`，不要使用标题。
 3. 收到 local reference 时优先用 `uid` 定位对象，再写回当前 `name`。
 4. 新 route 必须写 `schema_version: "0.1"`、`type: route`、`uid`、`title`、`target`、`profile`。
-5. `profile` 只能是 `meaning`、`proof`、`audit`、`history`。
+5. `profile` 只能是 `proof`。
 6. `representation` 只能是 `full`、`statement`、`summary`、`reference`、`omit`。
 7. 对 hard dependency 不要写 `omit`。
 8. `proof_choices` 只能选择 `role: proof` 或 `role: proof_fragment` 且确实 `proves` 对应 claim 的对象。

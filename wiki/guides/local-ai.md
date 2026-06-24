@@ -82,5 +82,5 @@ selection:
 6. 新增 proof 时，在 proof 对象写 `edges.proves -> claim`，在 proof 上写证明依赖 `edges.uses`。
 7. claim 的 statement 依赖写 `edges.requires`，不要把证明依赖直接写到 claim 的 `uses`。
 8. 生成 route 时，`representation` 只能使用 `full`、`statement`、`summary`、`reference`、`omit`。
-9. route 的 hard dependency 不得设为 `omit`；proof/meaning route 的 hard dependency 通常至少要 `statement`。
+9. route 的 hard dependency 不得设为 `omit`；`proof` route 的 hard dependency 通常至少要 `statement`。
 10. 修改后运行 `npm run atlas -- check --strict <paper-root-or-ProofAtlas-root>`。

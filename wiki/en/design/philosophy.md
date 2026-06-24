@@ -71,7 +71,7 @@ boundaries
 representation
 ```
 
-The resolver computes a dependency slice and explains why each object is included. It answers questions such as:
+The resolver computes a proof route and explains why each object is included. It answers questions such as:
 
 - Which proof route is currently used for this claim?
 - Is the route closed?
@@ -80,13 +80,13 @@ The resolver computes a dependency slice and explains why each object is include
 - When exporting to cloud AI, do hard dependencies have enough statement-level content?
 - If context must be trimmed, which objects can be downgraded and at what cost?
 
-Therefore `Linear` and `Graph` in Generated View are read-only projections of the same resolved route. The graph helps understanding, but it is not an editor.
+Therefore the Proof Tree in Generated View is a read-only projection of the resolved route. The tree helps explain the proof support structure, but it is not an editor.
 
 ## Sufficient Context First
 
 The goal of cloud export is not to minimize tokens at all costs. The first goal is sufficient context, traceable sources, and readable internal links.
 
-In proof / meaning context, hard dependencies cannot be only `reference`. They need at least readable `statement` content, otherwise cloud AI sees object names rather than checkable mathematical material.
+In a `proof` route, hard dependencies cannot be only `reference`. They need at least readable `statement` content, otherwise cloud AI sees object names rather than checkable mathematical material.
 
 Token estimates and marginal costs are trimming hints, not the default optimization target.
 

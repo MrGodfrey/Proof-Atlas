@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { commandRoute } from "../src/cli/atlas";
 import { createSnapshot, exportRoute } from "../src/core/contextExporter";
 import { buildGraph } from "../src/core/graph";
+import { isProofObligationObject } from "../src/core/proofObjects";
 import { linearizeRoute } from "../src/core/routeLinearizer";
+import { deriveRouteProofTree } from "../src/core/routeProofTree";
 import { resolveRoute } from "../src/core/routeResolver";
 import { applySuggestionSet, createSuggestionSet } from "../src/core/suggestions";
 import { writeYamlFile } from "../src/core/yaml";
@@ -32,6 +34,13 @@ describe("generated routes", () => {
     expect(route.nodes.find((node) => node.object.name === "main.proof.lr_iteration")?.inclusionClass).toBe("spine");
     expect(route.nodes.find((node) => node.object.name === "main.model.forward_semidiscrete_system")?.inclusionClass).toBe("vocabulary");
     expect(route.nodes.filter((node) => node.inclusionClass === "spine")).toHaveLength(11);
+
+    const tree = deriveRouteProofTree(route, graph);
+    expect(tree.root.object.name).toBe("main.claim.null_controllability");
+    expect(tree.defaultExpandedNodeIds).toEqual([tree.root.id]);
+    expect(tree.root.children.map((node) => node.object.name)).toEqual(["main.proof.lr_iteration"]);
+    expect(tree.root.children[0].children.map((node) => node.object.name)).toContain("main.claim.partial_null_control");
+    expect(tree.foundationNodes.map((node) => node.object.name)).toContain("main.model.forward_semidiscrete_system");
   });
 
   it("exports cloud markdown without raw Proof Atlas object links", async () => {
@@ -50,24 +59,273 @@ describe("generated routes", () => {
     expect(result.content).not.toMatch(/!?\[\[/);
   });
 
-  it("resolves proof object targets without proving the proof itself", async () => {
+  it("rejects proof tree routes whose target is not a proof-obligation claim", async () => {
     const graph = await buildGraph("examples/semidiscrete/ProofAtlas");
     const route = resolveRoute(graph, {
       target: "main.proof.lr_iteration",
       profile: "proof"
     });
 
-    expect(route.closed).toBe(true);
-    expect(route.contentSufficient).toBe(true);
+    expect(route.closed).toBe(false);
+    expect(route.contentSufficient).toBe(false);
     expect(route.target.name).toBe("main.proof.lr_iteration");
-    expect(route.selectedProofs).not.toHaveProperty("main.claim.null_controllability");
-    expect(route.selectedProofs).toMatchObject({
-      "main.claim.partial_null_control": "main.proof.partial_null_control",
-      "main.claim.observability": "main.proof.observability",
-      "main.claim.free_decay": "main.proof.free_decay"
+    expect(route.selectedProofs).toEqual({});
+    expect(route.diagnostics.map((item) => item.code)).toContain("unsupported_proof_tree_target");
+    expect(route.nodes.map((node) => node.object.name)).toEqual(["main.proof.lr_iteration"]);
+  });
+
+  it("uses the shared proof-obligation predicate for claim display eligibility", async () => {
+    const graph = await buildGraph("examples/semidiscrete/ProofAtlas");
+    expect(isProofObligationObject(graph.objectsByName["main.claim.null_controllability"])).toBe(true);
+    expect(isProofObligationObject(graph.objectsByName["main.eq.partial_control_representation"])).toBe(false);
+    expect(isProofObligationObject(graph.objectsByName["main.eq.observability_spectral_bound"])).toBe(false);
+
+    const equationRoute = resolveRoute(graph, {
+      target: "main.eq.partial_control_representation",
+      profile: "proof"
     });
-    expect(route.nodes.find((node) => node.object.name === "main.proof.lr_iteration")?.representation).toBe("full");
-    expect(route.nodes.map((node) => node.object.name)).toContain("main.claim.null_controllability");
+    expect(equationRoute.diagnostics.map((item) => item.code)).toContain("unsupported_proof_tree_target");
+  });
+
+  it("deduplicates route diagnostics reached through multiple witness paths", async () => {
+    const root = await tempDir("pa-route-diagnostics-");
+    const project = await writeTestProject(root, [
+      {
+        ...baseClaim("main.claim.target", "obj_20260611_d001"),
+        object: {
+          uid: "obj_20260611_d001",
+          name: "main.claim.target",
+          kind: "math",
+          role: "claim",
+          title: "Target",
+          body: ["statement.md"]
+        }
+      },
+      {
+        object: {
+          uid: "obj_20260611_d002",
+          name: "main.proof.target",
+          kind: "math",
+          role: "proof",
+          title: "Proof Target",
+          body: ["proof.md"],
+          edges: {
+            proves: [{ target: "main.claim.target" }],
+            uses: [{ target: "main.claim.branch_a" }, { target: "main.claim.branch_b" }]
+          }
+        },
+        bodies: { "proof.md": "Proof target.\n" }
+      },
+      {
+        ...baseClaim("main.claim.branch_a", "obj_20260611_d003"),
+        object: {
+          uid: "obj_20260611_d003",
+          name: "main.claim.branch_a",
+          kind: "math",
+          role: "claim",
+          title: "Branch A",
+          body: ["statement.md"]
+        }
+      },
+      {
+        object: {
+          uid: "obj_20260611_d004",
+          name: "main.proof.branch_a",
+          kind: "math",
+          role: "proof",
+          title: "Proof Branch A",
+          body: ["proof.md"],
+          edges: {
+            proves: [{ target: "main.claim.branch_a" }],
+            uses: [{ target: "main.claim.leaf" }]
+          }
+        },
+        bodies: { "proof.md": "Proof branch A.\n" }
+      },
+      {
+        ...baseClaim("main.claim.branch_b", "obj_20260611_d005"),
+        object: {
+          uid: "obj_20260611_d005",
+          name: "main.claim.branch_b",
+          kind: "math",
+          role: "claim",
+          title: "Branch B",
+          body: ["statement.md"]
+        }
+      },
+      {
+        object: {
+          uid: "obj_20260611_d006",
+          name: "main.proof.branch_b",
+          kind: "math",
+          role: "proof",
+          title: "Proof Branch B",
+          body: ["proof.md"],
+          edges: {
+            proves: [{ target: "main.claim.branch_b" }],
+            uses: [{ target: "main.claim.leaf" }]
+          }
+        },
+        bodies: { "proof.md": "Proof branch B.\n" }
+      },
+      {
+        ...baseClaim("main.claim.leaf", "obj_20260611_d007"),
+        object: {
+          uid: "obj_20260611_d007",
+          name: "main.claim.leaf",
+          kind: "math",
+          role: "claim",
+          title: "Leaf",
+          body: ["statement.md"]
+        }
+      }
+    ], {
+      views: { "paper.md": "# Paper\n\n![[main.claim.target]]\n" }
+    });
+
+    const graph = await buildGraph(project);
+    const route = resolveRoute(graph, {
+      target: "main.claim.target",
+      profile: "proof",
+      proofChoices: { "main.claim.target": "main.proof.target" }
+    });
+
+    const leafDiagnostics = route.diagnostics.filter((item) => item.code === "unresolved_claim" && item.objectName === "main.claim.leaf");
+    expect(leafDiagnostics).toHaveLength(1);
+    expect(route.nodes.find((node) => node.object.name === "main.claim.leaf")?.witnessPaths).toHaveLength(2);
+  });
+
+  it("marks the second proof-tree occurrence of a shared dependency as a shared reference", async () => {
+    const root = await tempDir("pa-route-shared-tree-");
+    const project = await writeTestProject(root, [
+      {
+        ...baseClaim("main.claim.target", "obj_20260611_s001"),
+        object: {
+          uid: "obj_20260611_s001",
+          name: "main.claim.target",
+          kind: "math",
+          role: "claim",
+          title: "Target",
+          body: ["statement.md"]
+        }
+      },
+      {
+        object: {
+          uid: "obj_20260611_s002",
+          name: "main.proof.target",
+          kind: "math",
+          role: "proof",
+          title: "Proof Target",
+          body: ["proof.md"],
+          edges: {
+            proves: [{ target: "main.claim.target" }],
+            uses: [{ target: "main.claim.branch_a" }, { target: "main.claim.branch_b" }]
+          }
+        },
+        bodies: { "proof.md": "Proof target.\n" }
+      },
+      {
+        ...baseClaim("main.claim.branch_a", "obj_20260611_s003"),
+        object: {
+          uid: "obj_20260611_s003",
+          name: "main.claim.branch_a",
+          kind: "math",
+          role: "claim",
+          title: "Branch A",
+          body: ["statement.md"]
+        }
+      },
+      {
+        object: {
+          uid: "obj_20260611_s004",
+          name: "main.proof.branch_a",
+          kind: "math",
+          role: "proof",
+          title: "Proof Branch A",
+          body: ["proof.md"],
+          edges: {
+            proves: [{ target: "main.claim.branch_a" }],
+            uses: [{ target: "main.claim.leaf" }]
+          }
+        },
+        bodies: { "proof.md": "Proof branch A.\n" }
+      },
+      {
+        ...baseClaim("main.claim.branch_b", "obj_20260611_s005"),
+        object: {
+          uid: "obj_20260611_s005",
+          name: "main.claim.branch_b",
+          kind: "math",
+          role: "claim",
+          title: "Branch B",
+          body: ["statement.md"]
+        }
+      },
+      {
+        object: {
+          uid: "obj_20260611_s006",
+          name: "main.proof.branch_b",
+          kind: "math",
+          role: "proof",
+          title: "Proof Branch B",
+          body: ["proof.md"],
+          edges: {
+            proves: [{ target: "main.claim.branch_b" }],
+            uses: [{ target: "main.claim.leaf" }]
+          }
+        },
+        bodies: { "proof.md": "Proof branch B.\n" }
+      },
+      {
+        ...baseClaim("main.claim.leaf", "obj_20260611_s007"),
+        object: {
+          uid: "obj_20260611_s007",
+          name: "main.claim.leaf",
+          kind: "math",
+          role: "claim",
+          title: "Leaf",
+          body: ["statement.md"]
+        }
+      },
+      {
+        object: {
+          uid: "obj_20260611_s008",
+          name: "main.proof.leaf",
+          kind: "math",
+          role: "proof",
+          title: "Proof Leaf",
+          body: ["proof.md"],
+          edges: {
+            proves: [{ target: "main.claim.leaf" }]
+          }
+        },
+        bodies: { "proof.md": "Proof leaf.\n" }
+      }
+    ], {
+      views: { "paper.md": "# Paper\n\n![[main.claim.target]]\n" }
+    });
+
+    const graph = await buildGraph(project);
+    const route = resolveRoute(graph, {
+      target: "main.claim.target",
+      profile: "proof",
+      proofChoices: {
+        "main.claim.target": "main.proof.target",
+        "main.claim.branch_a": "main.proof.branch_a",
+        "main.claim.branch_b": "main.proof.branch_b",
+        "main.claim.leaf": "main.proof.leaf"
+      }
+    });
+    const tree = deriveRouteProofTree(route, graph);
+    const occurrences: Array<{ name: string; role: string }> = [];
+    const visit = (node: typeof tree.root) => {
+      occurrences.push({ name: node.object.name, role: node.role });
+      node.children.forEach(visit);
+    };
+    visit(tree.root);
+
+    const leafOccurrences = occurrences.filter((item) => item.name === "main.claim.leaf");
+    expect(leafOccurrences.map((item) => item.role)).toEqual(["support", "shared_reference"]);
   });
 
   it("creates snapshots with materialized markdown and route identity", async () => {
@@ -136,7 +394,7 @@ describe("generated routes", () => {
       type: "route",
       title: "Target Route",
       target: "main.claim.target",
-      profile: "meaning",
+      profile: "proof",
       proof_choices: {},
       boundaries: [],
       representation: {},
@@ -192,7 +450,7 @@ describe("generated routes", () => {
       lines.push(items.map(String).join(" "));
     };
     try {
-      await commandRoute("main.claim.target", project, { profile: "meaning" });
+      await commandRoute("main.claim.target", project, { profile: "proof" });
     } finally {
       console.log = originalLog;
     }
@@ -238,7 +496,7 @@ describe("generated routes", () => {
       type: "route",
       title: "Target Route",
       target: "main.claim.target",
-      profile: "meaning",
+      profile: "proof",
       proof_choices: {},
       boundaries: [],
       representation: {},

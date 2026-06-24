@@ -6,6 +6,15 @@ import type Token from "markdown-it/lib/token.mjs";
 import { parseMarkdownReferences } from "./markdownRefs";
 import type { BodyBlock } from "./types";
 
+export interface MarkdownTokenSnapshot {
+  type: string;
+  tag: string;
+  markup: string;
+  content: string;
+  block: boolean;
+  map: [number, number] | null;
+}
+
 interface LinkTargetMeta {
   name: string;
   title?: string;
@@ -191,6 +200,17 @@ export function renderMarkdownBlock(
   currentObjectName?: string
 ): string {
   return md.render(linkifyObjectRefs(source, resolve, currentObjectName));
+}
+
+export function inspectMarkdownTokens(source: string): MarkdownTokenSnapshot[] {
+  return md.parse(source, {}).map((token) => ({
+    type: token.type,
+    tag: token.tag,
+    markup: token.markup,
+    content: token.content,
+    block: token.block,
+    map: token.map as [number, number] | null
+  }));
 }
 
 function renderDisplayMathBlock(source: string): string {

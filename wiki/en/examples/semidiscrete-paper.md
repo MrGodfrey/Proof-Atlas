@@ -21,7 +21,7 @@ This example decomposes a semi-discrete stochastic parabolic equation paper into
 3. Open `Proof Map`: inspect only the dependency chain for the main theorem proof.
 4. Open `Gaps and Audits`: inspect the adaptedness issue and historical failed routes.
 5. Open `Literature and Imported Results`: inspect all citation sources.
-6. Open `Why null controllability holds`: inspect the Generated View resolved from `views/null_controllability.route.yml`, including `Linear` and `Graph`.
+6. Open `Why null controllability holds`: inspect the Generated View resolved from `views/null_controllability.route.yml`, including Proof Tree and Narrative.
 
 ## Key Objects
 
