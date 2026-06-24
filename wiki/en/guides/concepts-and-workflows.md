@@ -24,9 +24,8 @@ This means:
 Proof Atlas does not first ask "which chapter does this paragraph belong to?" It first asks "what kind of object is this?"
 
 - `claim`: a conclusion that needs proof.
-- `proof` / `proof_fragment`: proof objects.
-- `setting` / `definition` / `notation`: background needed to read statements.
-- `model` / `construction` / `calculation`: models, constructions, and computations.
+- `proof`: complete proofs, local arguments, calculations, construction processes, or failed/draft proofs.
+- `setting` / `definition` / `notation` / `assumption`: background and introduced objects needed to read statements.
 - `issue`: blockers, risks, todos, or gaps.
 - `literature` / `source`: citations and external sources.
 
@@ -96,7 +95,7 @@ Goal: see which proofs, claims, settings, and calculations support a conclusion.
 
 1. Open the relevant Generated View, for example `Why null controllability holds`.
 2. Start with the `Proof Tree` target claim and selected proof.
-3. Use disclosure arrows to expand proof direct uses one layer at a time; use `Expand main path` only when you want the full route opened.
+3. Use disclosure arrows to expand proof direct uses one layer at a time; use `Expand main path` when you want the route opened deeply. It follows the displayed tree order, but auto-expands each object only at its first occurrence.
 4. Single-click a node body and inspect `Route inclusion` in the right column.
 5. Check these fields:
 
@@ -106,7 +105,7 @@ Goal: see which proofs, claims, settings, and calculations support a conclusion.
 | `witness path` | Why this node was included. |
 | `representation` | Whether hard dependencies have at least statement-level content. |
 | `diagnostics` | Proof-choice, statement, or proof-tree target issues. |
-| `marginal cost` | Where context can be downgraded if you need to reduce size. |
+| `boundary type` | Whether a boundary is an accepted input or a context cut. |
 
 6. Click `Route` to copy the CLI command and reproduce resolution in the terminal:
 
@@ -163,12 +162,12 @@ Do not copy the entire proof body for this workflow. Stable references plus dire
 
 ### Scenario 5: Add A Mathematical Object
 
-Goal: put a new lemma, proof, construction, or issue into the object graph.
+Goal: put a new lemma, proof, definition, setting, or issue into the object graph.
 
 1. Decide the object role:
 
 ```text
-claim / proof / setting / definition / model / construction / calculation / issue
+claim / proof / setting / notation / definition / assumption / issue
 ```
 
 2. Create it with the CLI:

@@ -1,6 +1,4 @@
-This object records the pointwise spectral observation estimate used in [[main.proof.observability]]. The adjoint state $z$ solves [[main.model.backward_adjoint_system]] with terminal datum in $E_j$, and $z(t)=\sum_{\mu_k\leq 2^{2j}}z_k(t)\phi_k$ is the low-frequency expansion from [[main.setting.spectral_spaces]].
-
-For every $t\in[0,T]$, the adjoint expansion and the partial discrete Lebeau-Robbiano input [[source.boyer_2010a.claim.partial_discrete_lr]] give
+Let $z$ solve [[main.model.backward_adjoint_system]] with terminal datum in $E_j$, and write the low-frequency expansion from [[main.setting.spectral_spaces]] as $z(t)=\sum_{\mu_k\leq 2^{2j}}z_k(t)\phi_k$. For every $t\in[0,T]$,
 
 $$
 \begin{aligned}

@@ -2,7 +2,7 @@ uid: obj_20260611_f024
 name: main.estimate.lr_induction_product
 kind: math
 role: claim
-display_as: estimate
+display_as: lemma
 importance: supporting
 title: Induction product estimate for the iteration
 status: needs_check

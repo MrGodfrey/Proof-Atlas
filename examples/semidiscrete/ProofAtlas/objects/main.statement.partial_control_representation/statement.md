@@ -1,6 +1,4 @@
-This object records the representation identity produced in [[main.construction.partial_control_duality]]. The adjoint state $z$ solves [[main.model.backward_adjoint_system]], the initial datum is $y_0$, and $\mathcal{U}$ denotes the observed-trace space generated in the duality construction.
-
-The Hahn-Banach extension and Riesz representation step produce the identity
+In the duality construction [[main.construction.partial_control_duality]], let $\mathcal{L}$ be the Hahn-Banach extension of the observed-trace functional and let $u$ be its Riesz representative. For every adjoint state $z$ solving [[main.model.backward_adjoint_system]] with terminal datum in $E_j$,
 
 $$
 \mathcal{L}(\chi_{G_0}z)

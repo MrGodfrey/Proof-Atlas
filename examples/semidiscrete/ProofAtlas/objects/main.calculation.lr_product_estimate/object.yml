@@ -1,8 +1,8 @@
 uid: obj_20260611_f009
 name: main.calculation.lr_product_estimate
 kind: math
-role: calculation
-display_as: estimate
+role: claim
+display_as: lemma
 importance: supporting
 title: Product estimate in the Lebeau-Robbiano iteration
 status: needs_check

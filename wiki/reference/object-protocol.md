@@ -114,7 +114,7 @@ note
 
 含义：
 
-- `math`：数学内容，包括问题、设定、模型、定义、结论、证明、构造、计算、例子、反例。
+- `math`：数学内容，包括问题、设定、记号、定义、假设、结论和证明材料。
 - `issue`：当前研究中的问题、缺口、风险或待检查处。
 - `note`：非核心数学对象，包括文献笔记、AI 讨论、历史说明、审稿意见、外部上下文。
 
@@ -127,15 +127,9 @@ problem
 setting
 notation
 definition
-model
 assumption
 claim
 proof
-proof_fragment
-construction
-calculation
-example
-counterexample
 ```
 
 `issue` role：
@@ -164,15 +158,17 @@ external_context
 
 推荐用法：
 
-- 定理、引理、命题、推论、重要估计：`kind: math`, `role: claim`。
-- 完整证明：`kind: math`, `role: proof`。
-- 局部证明片段或失败路线：`kind: math`, `role: proof_fragment`。
-- 常数估计、代数整理：`kind: math`, `role: calculation`。
-- 构造控制、时间网格、截断函数：`kind: math`, `role: construction`。
+- 数学问题或研究目标：`kind: math`, `role: problem`。
+- 全局环境、standing hypotheses 容器：`kind: math`, `role: setting`。
+- 纯符号约定：`kind: math`, `role: notation`。
+- 引入对象、系统、算子、网格、权函数或构造对象：`kind: math`, `role: definition`。
+- 当前理论或 route 接受的假设：`kind: math`, `role: assumption`。
+- 定理、引理、命题、推论、猜想、可被支撑的估计或公式性断言：`kind: math`, `role: claim`。
+- 完整证明、局部论证、推导、计算、构造过程、失败或草稿 proof：`kind: math`, `role: proof`。
 
 ## `display_as`
 
-控制网页展示样式。`role` 说明“它是什么”，`display_as` 说明“它在页面上以什么形式呈现”。对 `role: claim` 来说，`display_as: statement` 和 `display_as: estimate` 还表示这个 claim 是可引用输入，不是自动展开 proof tree 的 proof obligation。
+控制网页展示样式。`role` 说明对象在 atlas 里的数学职责，`display_as` 只说明它在阅读界面上以什么论文式标签呈现。`display_as` 不参与 proof obligation 判断，但它必须和 `kind` / `role` 兼容；例如 `role: assumption` 不能显示为 `lemma`，因为 lemma 是可证明的 claim。
 
 允许值：
 
@@ -183,19 +179,13 @@ setting
 notation
 definition
 assumption
-statement
 theorem
 lemma
 proposition
 corollary
 conjecture
 proof
-proof_fragment
-estimate
-construction
-calculation
 example
-counterexample
 remark
 issue
 gap
@@ -217,15 +207,30 @@ meeting_note
 | `math.setting` | `setting` |
 | `math.notation` | `notation` |
 | `math.definition` | `definition` |
-| `math.model` | `plain` |
 | `math.assumption` | `assumption` |
 | `math.claim` | `theorem` |
 | `math.proof` | `proof` |
-| `math.proof_fragment` | `proof_fragment` |
-| `math.construction` | `construction` |
-| `math.calculation` | `calculation` |
-| `math.example` | `example` |
-| `math.counterexample` | `counterexample` |
+| `issue.gap` | `gap` |
+| `issue.question` | `question` |
+| `issue.todo` | `todo` |
+| `issue.risk` / `possible_error` / `review_concern` / `missing_reference` | `warning` |
+| `note.literature` | `literature_note` |
+| `note.ai_note` | `ai_note` |
+| `note.meeting` | `meeting_note` |
+| `note.review_note` | `review_note` |
+| `note.historical` / `scratch` / `external_context` | `note` |
+
+硬性兼容规则：
+
+| `kind` / `role` | 允许的 `display_as` |
+|---|---|
+| `math.problem` | `problem` |
+| `math.setting` | `setting` |
+| `math.notation` | `notation` |
+| `math.definition` | `definition` |
+| `math.assumption` | `assumption` |
+| `math.claim` | `plain`, `theorem`, `lemma`, `proposition`, `corollary`, `conjecture` |
+| `math.proof` | `proof` |
 | `issue.gap` | `gap` |
 | `issue.question` | `question` |
 | `issue.todo` | `todo` |
@@ -242,12 +247,12 @@ meeting_note
 |---|---|---|
 | 一个 `role: claim` 实际是主定理 | `display_as: theorem` | 让页面和导出标题符合数学读者预期。 |
 | 一个 `role: claim` 是引理 | `display_as: lemma` | 仍然是 claim，route 可为它找 proof，但页面显示为 lemma。 |
-| 一个 `role: claim` 是可引用恒等式、公式性事实或命名陈述 | `display_as: statement` | 不把 TeX 公式编号当对象类型；强调这是 statement-level 输入，不自动找 proof tree。 |
-| 一个 `role: claim` 是关键估计 | `display_as: estimate` | 与 `statement` 类似，不自动作为 proof obligation；适合不等式、谱界、能量估计等依赖材料。 |
-| 一个 `role: model` 只是普通模型描述 | 省略或 `display_as: plain` | 避免页面上把模型误读成 theorem/definition。 |
+| 一个 `role: claim` 是命名恒等式、公式性事实或估计式 | `display_as: lemma` / `proposition` / `plain` | 仍然是 claim，route 需要解释它为什么可用；“estimate”等内容类型写进标题、summary 或正文。 |
+| 系统、模型、网格或算子定义 | `role: definition`, `display_as: definition` | `model` 不再是 math role；这些对象应作为定义或 setting 表达。 |
+| 证明内部构造、代数整理或局部计算 | `role: proof`, `display_as: proof` | 完整性和可靠度用 `status` 表达，不用 `proof_fragment` / `calculation` / `construction` role。 |
 | 文献对象 | `kind: note`, `role: literature`, `display_as: literature_note` | 让右栏和导出把它视为来源材料。 |
 
-注意：proof obligation 的代码判据是 `kind: math`、`role: claim`，并且 `display_as` 不是 `statement` 或 `estimate`。因此 `plain`、`theorem`、`lemma`、`proposition`、`corollary`、`conjecture` claim 都可以作为 Proof Tree root；`display_as: statement` 或 `display_as: estimate` 只能作为引用材料或 context，不会作为 Generated View 根节点。
+注意：proof obligation 的代码判据只有 `kind: math`、`role: claim`。`plain`、`theorem`、`lemma`、`proposition`、`corollary`、`conjecture` claim 都可以作为 Proof Tree root；改变 `display_as` 只改变 claim 的展示标签，不改变 resolver 是否要求 proof。
 
 ## `importance`
 
@@ -440,7 +445,7 @@ source_result:
 | 对象类型 | 默认 body 文件 |
 |---|---|
 | `math.claim` | `statement.md` |
-| `math.proof` / `math.proof_fragment` | `proof.md` |
+| `math.proof` | `proof.md` |
 | `issue.*` | `note.md` |
 | `note.*` | `note.md` |
 | 其他 math 对象 | `body.md` |
@@ -455,8 +460,8 @@ source_result:
 statement representation 的抽取规则与 body 文件名有关：
 
 - 有 `statement.md` 时，`statement` 表示使用 `statement.md`。
-- `setting`、`notation`、`definition`、`model`、`construction`、`calculation` 没有 `statement.md` 时，可用第一个 body 文件作为 statement source。
-- `claim`、`problem`、`assumption`、`proof`、`proof_fragment`、`note` 没有 `statement.md` 时，不能可靠导出为 statement。
+- `setting`、`notation`、`definition` 没有 `statement.md` 时，可用第一个 body 文件作为 statement source。
+- `claim`、`problem`、`assumption`、`proof`、`note` 没有 `statement.md` 时，不能可靠导出为 statement。
 
 ## `edges`
 
@@ -481,7 +486,7 @@ edges:
 - `strength`：可选，`hard` 或 `soft`，默认 `hard`。
 - `reason`：可选，说明依赖原因。
 
-`requires` 表示读懂或陈述当前对象所需的上下文。`uses` 表示证明、推导、构造或计算实际使用的数学依赖。通常 claim 写 `requires`，proof/proof_fragment 写 `proves` 和 `uses`。
+`requires` 表示读懂或陈述当前对象所需的上下文。`uses` 表示证明、推导、构造或计算实际使用的数学依赖。通常 claim 写 `requires`，proof 写 `proves` 和 `uses`。
 
 严格 schema 不接受旧的字符串列表形式：
 

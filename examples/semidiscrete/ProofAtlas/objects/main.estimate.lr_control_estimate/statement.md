@@ -1,6 +1,4 @@
-This object isolates the control-size estimate used in the Lebeau-Robbiano iteration. The time interval $(a_j,a_j+T_j)$ and the parameters $T_j$ are from [[main.construction.lr_time_grid]], the forward state is the solution of [[main.model.forward_semidiscrete_system]], and $u_j$ is the partial control supplied by [[main.claim.partial_null_control]] on the low-frequency space $E_j$ from [[main.setting.spectral_spaces]].
-
-On $(a_j,a_j+T_j)$, the control $u_j$ satisfies
+Let $(a_j,a_j+T_j)$ be a controlled subinterval from [[main.construction.lr_time_grid]], let $y$ solve [[main.model.forward_semidiscrete_system]], and let $u_j$ be the partial control supplied by [[main.claim.partial_null_control]] on the low-frequency space $E_j$ from [[main.setting.spectral_spaces]]. Then
 
 $$
 \begin{aligned}

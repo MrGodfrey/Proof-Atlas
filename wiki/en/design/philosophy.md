@@ -88,7 +88,7 @@ The goal of cloud export is not to minimize tokens at all costs. The first goal 
 
 In a `proof` route, hard dependencies cannot be only `reference`. They need at least readable `statement` content, otherwise cloud AI sees object names rather than checkable mathematical material.
 
-Token estimates and marginal costs are trimming hints, not the default optimization target.
+The current UI does not expose token estimates or marginal costs; context sufficiency is explained through route status, representation, and diagnostics.
 
 ## Local AI Loop
 

@@ -6,15 +6,9 @@ export const MATH_ROLES = [
   "setting",
   "notation",
   "definition",
-  "model",
   "assumption",
   "claim",
-  "proof",
-  "proof_fragment",
-  "construction",
-  "calculation",
-  "example",
-  "counterexample"
+  "proof"
 ] as const;
 
 export const ISSUE_ROLES = [
@@ -55,19 +49,13 @@ export const DISPLAY_AS = [
   "notation",
   "definition",
   "assumption",
-  "statement",
   "theorem",
   "lemma",
   "proposition",
   "corollary",
   "conjecture",
   "proof",
-  "proof_fragment",
-  "estimate",
-  "construction",
-  "calculation",
   "example",
-  "counterexample",
   "remark",
   "issue",
   "gap",

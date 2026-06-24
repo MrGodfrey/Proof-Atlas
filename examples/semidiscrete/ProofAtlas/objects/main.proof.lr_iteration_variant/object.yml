@@ -1,0 +1,15 @@
+uid: obj_20260624_alt01
+name: main.proof.lr_iteration_variant
+kind: math
+role: proof
+display_as: proof
+importance: local
+title: Variant Lebeau-Robbiano iteration proof
+status: draft
+body:
+  - proof.md
+summary: >-
+  A draft alternative organization of the null-controllability proof, kept to exercise route proof-choice alternatives.
+edges:
+  proves:
+    - target: main.claim.null_controllability

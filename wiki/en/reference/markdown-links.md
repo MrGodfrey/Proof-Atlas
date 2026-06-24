@@ -68,18 +68,16 @@ Local numbering rules:
 
 If an equation needs cross-object references, repeated reuse, or separate checking, do not mechanically promote it to an `equation` object. First identify its mathematical role, then promote it to the corresponding object:
 
-- Forward or backward systems: `role: model`.
-- Weights, cutoffs, time grids, and control constructions: `role: construction` or `role: definition`.
-- Key inequalities or spectral bounds: `role: claim`, `display_as: estimate`.
-- Named identities, representation formulas, or low-mode cancellation statements: `role: claim`, `display_as: statement`.
-- Exponent bookkeeping or longer algebra: `role: calculation`.
+- Forward/backward systems, weights, cutoffs, time grids, and control constructions: usually `role: definition`; use `role: setting` when the object is only an ambient context container.
+- Reusable key inequalities, spectral bounds, named identities, or formula-like facts: `role: claim`, with `display_as` such as `lemma`, `proposition`, or `plain`; content words like “estimate” belong in the title or summary.
+- Exponent bookkeeping, longer algebra, or construction steps internal to a proof: `role: proof`; use `status` to express partial, draft, obsolete, or checked state.
 
 For example, a reusable identity can be written as:
 
 ```yaml
 kind: math
 role: claim
-display_as: statement
+display_as: lemma
 name: main.statement.energy_identity
 ```
 
@@ -89,4 +87,4 @@ Refer to it with normal object links:
 Combining [[main.statement.energy_identity]] and [[main.claim.observability]], ...
 ```
 
-Promoted objects are not mechanical replacements for TeX labels. Their bodies should start with a complete sentence, state where symbols and assumptions come from, and explain how the statement / estimate / calculation is used in the proof. Cross-object references should point to the object itself, not to a local number inside that object.
+Promoted objects are not mechanical replacements for TeX labels. Their bodies should start with a complete sentence, state where symbols and assumptions come from, and explain how the claim or proof-support object is used in the proof. Cross-object references should point to the object itself, not to a local number inside that object.

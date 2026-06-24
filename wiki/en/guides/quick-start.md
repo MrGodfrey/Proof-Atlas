@@ -34,6 +34,10 @@ You can also pass the `ProofAtlas/` directory directly:
 npm run atlas -- dev examples/semidiscrete/ProofAtlas --port 3217
 ```
 
+Proof Atlas is currently a local trusted-file workbench. Do not open
+`ProofAtlas/` projects from untrusted sources directly; review their Markdown,
+YAML, and reference files as ordinary local files first.
+
 ## Recent Projects
 
 ```bash

@@ -6,10 +6,23 @@ import { parseMarkdownReferences, rewriteMarkdownObjectNames } from "../src/core
 import { hasCheckErrors } from "../src/core/problems";
 import { formatLocalReference } from "../src/core/reference";
 import { renderMarkdownBlock } from "../src/core/render";
+import { MATH_ROLES } from "../src/core/types";
 import { renderObjectSummaryHtml } from "../src/web/App";
 import { baseClaim, tempDir, writeTestProject } from "./helpers";
 
 describe("Proof Atlas core", () => {
+  it("keeps math roles to the minimal orthogonal set", () => {
+    expect(MATH_ROLES).toEqual([
+      "problem",
+      "setting",
+      "notation",
+      "definition",
+      "assumption",
+      "claim",
+      "proof"
+    ]);
+  });
+
   it("applies defaults and derived reverse edges", async () => {
     const root = await tempDir("pa-defaults-");
     const project = await writeTestProject(root, [
@@ -77,7 +90,7 @@ describe("Proof Atlas core", () => {
     const html = renderMarkdownBlock(
       "Use [[main.statement.energy|energy identity]], cite [[source.paper|Boyer 2010]], and open [[main.claim.a|the claim]].",
       (name) => {
-        if (name === "main.statement.energy") return { name, display_as: "statement", role: "claim" };
+        if (name === "main.statement.energy") return { name, display_as: "lemma", role: "claim" };
         if (name === "source.paper") return { name, display_as: "literature_note", role: "literature" };
         if (name === "main.claim.a") return { name, display_as: "theorem", role: "claim" };
         return undefined;
@@ -143,6 +156,18 @@ describe("Proof Atlas core", () => {
           edges: { related_to: ["main.claim.a"] }
         },
         bodies: {}
+      },
+      {
+        object: {
+          uid: "obj_20260611_cccc",
+          name: "main.assumption.fake_lemma",
+          kind: "math",
+          role: "assumption",
+          display_as: "lemma",
+          title: "Fake Lemma",
+          body: ["body.md"]
+        },
+        bodies: { "body.md": "This is an assumption pretending to be a lemma.\n" }
       }
     ], {
       views: { "paper.md": "# Paper\n\n![[main.claim.a|expanded]]\n\n![[main.claim.missing]]\n" },
@@ -152,6 +177,7 @@ describe("Proof Atlas core", () => {
     const codes = graph.problems.map((item) => item.code);
     expect(codes).toContain("status_false_forbidden");
     expect(codes).toContain("invalid_display_as");
+    expect(codes).toContain("invalid_display_role_combo");
     expect(codes).toContain("invalid_edge_ref");
     expect(codes).toContain("missing_edge_target");
     expect(codes).toContain("missing_markdown_link");

@@ -1,9 +1,7 @@
-This object records the elementary exponent identities used after the induction product estimate in [[main.estimate.lr_induction_product]]. The time lengths $T_j=K2^{-j\rho}$ and the endpoints $a_j$ are those of [[main.construction.lr_time_grid]].
-
-First, the constant factor in the product is rewritten as
+For the time lengths $T_j=K2^{-j\rho}$ from [[main.construction.lr_time_grid]], the following identities hold. First, the constant factor in the product is rewritten as
 
 $$
-C_5^{j_0+2}=e^{(j_0+2)\ln 2},
+C_5^{j_0+2}=e^{(j_0+2)\ln C_5},
 \tag{LEI1}
 $$
 
@@ -12,7 +10,7 @@ where $C_5$ is the one-step constant appearing in [[main.calculation.lr_product_
 $$
 \prod_{j=0}^{j_0+1}T_j^{-2}
 =
-e^{-2(j_0+2)\ln K-\rho\ln 2\,(j_0+1)(j_0+2)/2},
+e^{-2(j_0+2)\ln K+\rho\ln 2\,(j_0+1)(j_0+2)},
 \tag{LEI2}
 $$
 
@@ -30,4 +28,4 @@ C_4(2^{j_0+2}-1)
 \tag{LEI3}
 $$
 
-The identities (LEI1)--(LEI3) are local labels for this object. Together they reduce the product in [[main.estimate.lr_induction_product]] to the negative exponential bound used at the end of [[main.calculation.lr_product_estimate]].
+Together (LEI1)--(LEI3) reduce the product in [[main.estimate.lr_induction_product]] to the negative exponential bound used at the end of [[main.calculation.lr_product_estimate]].

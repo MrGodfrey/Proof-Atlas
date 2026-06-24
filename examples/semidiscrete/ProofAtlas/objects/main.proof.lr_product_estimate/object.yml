@@ -1,0 +1,21 @@
+uid: obj_20260624_lpepr
+name: main.proof.lr_product_estimate
+kind: math
+role: proof
+display_as: proof
+importance: supporting
+title: Proof of the Lebeau-Robbiano product estimate
+status: needs_check
+body:
+  - proof.md
+summary: Derives the final residual estimate from the one-step bound, induction product, and exponent identities.
+edges:
+  proves:
+    - target: main.calculation.lr_product_estimate
+  uses:
+    - target: main.construction.lr_time_grid
+    - target: main.estimate.lr_induction_product
+    - target: main.calculation.lr_exponent_identities
+    - target: main.claim.partial_null_control
+    - target: main.claim.free_decay
+    - target: main.setting.spectral_spaces

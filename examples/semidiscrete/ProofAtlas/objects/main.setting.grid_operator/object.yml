@@ -1,7 +1,7 @@
 uid: obj_20260611_a102
 name: main.setting.grid_operator
 kind: math
-role: setting
+role: definition
 display_as: definition
 importance: background
 title: Discrete operators and the weighted grid inner product

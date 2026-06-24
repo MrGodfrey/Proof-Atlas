@@ -1,7 +1,7 @@
 uid: obj_20260611_f003
 name: main.setting.domain_and_coefficients
 kind: math
-role: setting
+role: assumption
 display_as: assumption
 importance: background
 title: Domain, control region, and diffusion coefficient assumptions

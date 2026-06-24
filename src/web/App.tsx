@@ -25,10 +25,12 @@ import { ACTIVE_STATUS, STATUS_COLORS } from "../core/constants";
 import { edgeTargets } from "../core/edgeUtils";
 import { renderMarkdownBlock } from "../core/render";
 import { deriveRouteProofTree, type ProofTreeNode } from "../core/routeProofTree";
-import { resolveRoute, type ResolvedRoute, type ResolvedRouteNode, type RouteDiagnostic } from "../core/routeResolver";
+import { resolveRoute, routeBoundaryKind, type ResolvedRoute, type ResolvedRouteNode, type RouteDiagnostic, type RouteVerificationCounts } from "../core/routeResolver";
 import { isObjectCardExpanded, nextObjectExpansionState } from "./cardExpansion";
 import { ignoresObjectLinkTarget, objectLinkAction, shouldAutoScrollFocusedObject, type ObjectLinkArea, type ObjectLinkGesture } from "./interactions";
+import { hasUniqueMainPathExpansionChange, mergeUniqueMainPathExpansion } from "./proofTreeExpansion";
 import { relationLabel, sortRelationRows } from "./relations";
+import { routeNarrativeRelatedNames } from "./routeNarrative";
 import type {
   AtlasRouteView,
   AtlasProblem,
@@ -45,12 +47,6 @@ import type {
 } from "../core/types";
 
 type BodyCache = Record<string, BodyFile[]>;
-type ReferenceSelection = {
-  file: string;
-  block: string;
-  kind: BodyFile["blocks"][number]["kind"];
-  excerpt: string;
-};
 
 type RouteExportCommandResponse = {
   command?: string;
@@ -67,7 +63,7 @@ type RouteState =
 
 type Toast = { text: string; title: string } | null;
 type CenterScrollMode = "top" | "preserve";
-type RoutePaneTab = "tree" | "narrative";
+type RoutePaneTab = "tree" | "narrative" | "choices";
 type LeftNavTab = "views" | "objects";
 type RoutePaneUiState = {
   tab?: RoutePaneTab;
@@ -105,67 +101,6 @@ const STATUS_OPTIONS: ObjectStatus[] = [
   "obsolete",
   "archived"
 ];
-const STATIC_DEMO_MODE = import.meta.env.VITE_PROOF_ATLAS_DEMO === "1";
-const HOSTED_WIKI_URL = "https://proof-atlas-demo.pages.dev/wiki/";
-
-type StaticDemoData = {
-  graph: NormalizedGraph;
-  bodies: BodyCache;
-};
-
-let staticDemoDataPromise: Promise<StaticDemoData> | null = null;
-
-function staticDemoDataUrl(): string {
-  return `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}demo-data.json`;
-}
-
-async function loadStaticDemoData(): Promise<StaticDemoData> {
-  staticDemoDataPromise ??= fetch(staticDemoDataUrl(), { cache: "no-store" }).then(async (response) => {
-    if (!response.ok) throw new Error(`Unable to load demo data: ${response.status}`);
-    return response.json() as Promise<StaticDemoData>;
-  });
-  return staticDemoDataPromise;
-}
-
-function displayDemoPath(graph: NormalizedGraph, filePath: string): string {
-  if (!graph.workspace.root) return filePath;
-  const root = graph.workspace.root.replaceAll("\\", "/").replace(/\/+$/, "");
-  const normalized = filePath.replaceAll("\\", "/");
-  if (normalized === root) return ".";
-  return normalized.startsWith(`${root}/`) ? normalized.slice(root.length + 1) : filePath;
-}
-
-function formatDemoReference(graph: NormalizedGraph, object: NormalizedObject, selection?: ReferenceSelection): string {
-  const lines = [
-    "ProofAtlas local reference",
-    `project: ${graph.config.project}`,
-    `atlas_root: ${graph.atlasRoot}`,
-    `workspace_root: ${graph.workspace.root ?? ""}`,
-    ...(graph.workspace.texMain ? [`tex_main: ${displayDemoPath(graph, graph.workspace.texMain)}`] : []),
-    `uid: ${object.uid}`,
-    `name: ${object.name}`,
-    ...(object.origin.kind === "project" ? [] : [`origin: ${object.origin.kind}`]),
-    ...(object.origin.atlasId ? [`origin_atlas: ${object.origin.atlasId}`] : []),
-    ...(object.origin.kind === "project" ? [] : [`origin_atlas_root: ${object.origin.atlasRoot}`]),
-    ...(object.citation ? [
-      `citation_bibkey: ${object.citation.bibkey}`,
-      ...(object.citation.trust ? [`citation_trust: ${object.citation.trust}`] : [])
-    ] : []),
-    `path: ${object.objectPath}`,
-    "body:",
-    ...object.body.map((item) => `  - ${item}`)
-  ];
-  if (selection) {
-    lines.push(
-      "selection:",
-      `  file: ${selection.file}`,
-      `  block: ${selection.block}`,
-      `  kind: ${selection.kind}`,
-      `  excerpt: ${JSON.stringify(selection.excerpt)}`
-    );
-  }
-  return lines.join("\n");
-}
 
 function defaultDetailWidth(): number {
   const availableWidth = window.innerWidth - DEFAULT_LEFT_WIDTH;
@@ -266,18 +201,6 @@ function titleForPath(path: string): string {
   return path.replace(/^views\//, "").replace(/\.md$/, "");
 }
 
-function routeExportStem(routePath: string): string {
-  const baseName = routePath.split(/[\\/]/).pop() ?? "route";
-  return baseName
-    .replace(/\.route\.ya?ml$/i, "")
-    .replace(/\.(ya?ml|json|md)$/i, "") || "route";
-}
-
-function quoteShellArg(value: string): string {
-  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value;
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}
-
 function viewLabel(view?: AtlasView): string {
   if (!view) return "View";
   return titleForPath(view.path).replace(/(^|[-_ ])\w/g, (part) => part.toUpperCase());
@@ -331,11 +254,6 @@ function truncateLabel(value: string, maxLength: number): string {
   return value.length <= maxLength ? value : `${value.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
-function formatTokenCount(value: number): string {
-  if (value >= 1000) return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k`;
-  return String(value);
-}
-
 function escapeHtmlText(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -376,7 +294,7 @@ function shouldShowByFilter(object: NormalizedObject, statusFilter: Set<ObjectSt
 
 function defaultExpanded(object: NormalizedObject, embed?: ViewEmbedItem): boolean {
   if (embed?.expanded) return true;
-  return ["claim", "problem", "setting", "model", "definition"].includes(object.role);
+  return ["claim", "problem", "setting", "definition"].includes(object.role);
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -513,6 +431,25 @@ function writeRoutePaneUiState(key: string, patch: RoutePaneUiState): void {
   window.sessionStorage.setItem(key, JSON.stringify(next));
 }
 
+function normalizeRoutePaneTab(tab?: RoutePaneTab): RoutePaneTab {
+  if (tab === "narrative" || tab === "choices") return tab;
+  return "tree";
+}
+
+function compactVerification(counts: RouteVerificationCounts): string {
+  const parts = [
+    counts.checked ? `${counts.checked} checked` : undefined,
+    counts.needs_check ? `${counts.needs_check} needs_check` : undefined,
+    counts.partial ? `${counts.partial} partial` : undefined,
+    counts.draft ? `${counts.draft} draft` : undefined
+  ].filter((part): part is string => Boolean(part));
+  return parts.length ? parts.join(" / ") : "none";
+}
+
+function compactRouteStatus(route: ResolvedRoute): string {
+  return `${route.status.structure} · context ${route.status.context} · ${route.status.proofChoice.mode} choices`;
+}
+
 function ColumnResizer(props: {
   side: "left" | "right";
   label: string;
@@ -560,12 +497,6 @@ export default function App() {
   const toastTimer = useRef<number | null>(null);
 
   const refreshState = useCallback(async () => {
-    if (STATIC_DEMO_MODE) {
-      const data = await loadStaticDemoData();
-      setBodyCache(data.bodies);
-      setAppState({ mode: "project", graph: data.graph });
-      return;
-    }
     const response = await fetch("/api/state", { cache: "no-store" });
     setAppState(await response.json() as AppState);
   }, []);
@@ -606,8 +537,8 @@ export default function App() {
       setRoute(parseRoute());
     };
     window.addEventListener("popstate", onPop);
-    const events = STATIC_DEMO_MODE ? undefined : new EventSource("/api/events");
-    events?.addEventListener("build", (event) => {
+    const events = new EventSource("/api/events");
+    events.addEventListener("build", (event) => {
       const data = JSON.parse((event as MessageEvent).data) as { type: string; problemCount?: number };
       setBuildFlash(data.type === "rebuilt" || data.type === "project_opened" ? `Rebuilt · ${data.problemCount ?? 0} problems` : "Rebuild failed");
       setTimeout(() => setBuildFlash(null), 1800);
@@ -616,7 +547,7 @@ export default function App() {
     });
     return () => {
       window.removeEventListener("popstate", onPop);
-      events?.close();
+      events.close();
     };
   }, [refreshState]);
 
@@ -845,11 +776,6 @@ export default function App() {
 
   const ensureBody = useCallback(async (uid: string) => {
     if (bodyCache[uid]) return;
-    if (STATIC_DEMO_MODE) {
-      const data = await loadStaticDemoData();
-      setBodyCache((cache) => ({ ...cache, [uid]: data.bodies[uid] ?? [] }));
-      return;
-    }
     const response = await fetch(`/api/object/${encodeURIComponent(uid)}/body`, { cache: "no-store" });
     if (!response.ok) return;
     const data = await response.json() as { files: BodyFile[] };
@@ -1046,26 +972,18 @@ export default function App() {
 
   const copyReference = useCallback(async (object: NormalizedObject) => {
     const selection = getSelectionForReference();
-    let text: string;
-    if (STATIC_DEMO_MODE) {
-      if (!graph) return;
-      text = formatDemoReference(graph, object, selection);
-    } else {
-      const response = await fetch("/api/reference", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uid: object.uid, selection })
-      });
-      const data = await response.json() as { text: string };
-      text = data.text;
-    }
-    await copyTextWithToast("Copied local reference", text);
+    const response = await fetch("/api/reference", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uid: object.uid, selection })
+    });
+    const data = await response.json() as { text: string };
+    await copyTextWithToast("Copied local reference", data.text);
     setCopiedUid(object.uid);
     setTimeout(() => setCopiedUid(null), 1500);
-  }, [copyTextWithToast, graph]);
+  }, [copyTextWithToast]);
 
   const openProjectFromLauncher = useCallback(async (input: string): Promise<string | undefined> => {
-    if (STATIC_DEMO_MODE) return "The hosted demo is read-only and uses the bundled example atlas.";
     const response = await fetch("/api/open", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1138,7 +1056,6 @@ export default function App() {
           if (object) selectObject(object);
         }}
         onSwitchProject={openProjectFromLauncher}
-        staticDemo={STATIC_DEMO_MODE}
       />
       <div className="main-row">
         {leftOpen && (
@@ -1456,7 +1373,6 @@ function TopBar(props: {
   setKindFilter: (value: Set<ObjectKind>) => void;
   onProblemClick: (problem: AtlasProblem) => void;
   onSwitchProject: (input: string) => Promise<string | undefined>;
-  staticDemo: boolean;
 }) {
   const buildColor = props.buildState === "ok" ? "#2E7D32" : props.buildState === "warning" ? "#B8860B" : "#C62828";
   const buildLabel = props.buildState === "ok" ? "Build OK" : props.buildState === "warning" ? `${props.graph.problems.length} problem(s)` : "Build error";
@@ -1478,24 +1394,15 @@ function TopBar(props: {
       <span className="current-view" title={props.currentLabel}>{props.currentLabel}</span>
       <div className="top-spacer" />
       {props.buildFlash && <span className="build-flash">{props.buildFlash}</span>}
-      {props.staticDemo ? (
-        <>
-          <span className="demo-chip">Cloudflare demo</span>
-          <a className="toolbar-button" href={HOSTED_WIKI_URL} title="Open the Proof Atlas wiki">
-            <NotebookText size={13} /> Wiki
-          </a>
-        </>
-      ) : (
-        <ProjectSwitcher
-          open={props.projectOpen}
-          setOpen={props.setProjectOpen}
-          onSwitchProject={props.onSwitchProject}
-          onBeforeOpen={() => {
-            props.setFilterOpen(false);
-            props.setBuildOpen(false);
-          }}
-        />
-      )}
+      <ProjectSwitcher
+        open={props.projectOpen}
+        setOpen={props.setProjectOpen}
+        onSwitchProject={props.onSwitchProject}
+        onBeforeOpen={() => {
+          props.setFilterOpen(false);
+          props.setBuildOpen(false);
+        }}
+      />
       <div className="top-popover-anchor">
         <button className={`toolbar-button ${props.filterOpen ? "active" : ""}`} onClick={() => {
           props.setFilterOpen(!props.filterOpen);
@@ -1581,7 +1488,7 @@ function LeftNav(props: {
       return [view.path, {
         target: shortName(route.target.name),
         objects: route.nodes.length,
-        tokens: formatTokenCount(route.totalTokens)
+        status: compactRouteStatus(route)
       }];
     }));
   }, [generatedViews, props.graph]);
@@ -1642,7 +1549,7 @@ function LeftNav(props: {
                   <FileText size={13} />
                   <span className="view-button-main">
                     <b>{view.title}</b>
-                    {summary && <small>{summary.target} · {summary.objects} objects · {summary.tokens} tokens</small>}
+                    {summary && <small>{summary.target} · {summary.objects} objects · {summary.status}</small>}
                   </span>
                 </button>
               );
@@ -1711,7 +1618,7 @@ function CommandPalette(props: {
       return [view.path, {
         target: shortName(route.target.name),
         objects: route.nodes.length,
-        tokens: formatTokenCount(route.totalTokens)
+        status: compactRouteStatus(route)
       }];
     }));
   }, [generatedViews, props.graph]);
@@ -1806,7 +1713,7 @@ function CommandPalette(props: {
                       <FileText size={14} />
                       <span>
                         <b>{view.title}</b>
-                        <small>{summary ? `${summary.target} · ${summary.objects} objects · ${summary.tokens} tokens` : view.path}</small>
+                        <small>{summary ? `${summary.target} · ${summary.objects} objects · ${summary.status}` : view.path}</small>
                       </span>
                     </button>
                   );
@@ -1887,6 +1794,7 @@ type RelationRow = {
   label: string;
   target: NormalizedObject;
   derived?: boolean;
+  selected?: boolean;
 };
 
 type RelationSection = {
@@ -1908,23 +1816,20 @@ function routeContextLabels(route: ResolvedRoute, node: ResolvedRouteNode): stri
 
 function routeContextGroupKey(row: RouteContextRow): string {
   if (row.labels.includes("requires")) return "requires";
-  if (row.labels.includes("uses")) return row.node.object.display_as === "statement" || row.node.object.display_as === "estimate"
-    ? "statements"
-    : "uses";
+  if (row.labels.includes("uses")) return "uses";
   if (row.labels.includes("cites") || row.node.object.kind === "note" || row.node.object.provenance !== "internal") return "sources";
   return "other";
 }
 
 function routeContextGroupTitle(key: string): string {
   if (key === "requires") return "Required Context";
-  if (key === "statements") return "Used Statements and Estimates";
   if (key === "uses") return "Used Inputs";
   if (key === "sources") return "Citation and Source Context";
   return "Other Route Context";
 }
 
 function groupRouteContextNodes(route: ResolvedRoute, nodes: ResolvedRouteNode[]): RouteContextGroup[] {
-  const order = ["requires", "statements", "uses", "sources", "other"];
+  const order = ["requires", "uses", "sources", "other"];
   const groups = new Map<string, RouteContextRow[]>();
   for (const node of nodes) {
     const row: RouteContextRow = { node, labels: routeContextLabels(route, node) };
@@ -1947,6 +1852,29 @@ function relationRowsForEdgeRefs(graph: NormalizedGraph, label: string, refs: Ed
   return relationRowsForTargets(graph, label, edgeTargets(refs));
 }
 
+function selectedProofNamesForObject(graph: NormalizedGraph, object: NormalizedObject): Set<string> {
+  if (object.kind !== "math" || object.role !== "claim") return new Set();
+  const names = new Set<string>();
+  for (const view of graph.routeViews) {
+    const selectedName = resolveRoute(graph, view.route).selectedProofs[object.name];
+    if (selectedName) names.add(selectedName);
+  }
+  return names;
+}
+
+function applySelectedProofContext(rows: RelationRow[], selectedProofNames: ReadonlySet<string>): RelationRow[] {
+  if (selectedProofNames.size === 0) return rows;
+  return rows
+    .filter((row) => row.label !== "proved_by" || selectedProofNames.has(row.target.name))
+    .map((row) => row.label === "proved_by" && selectedProofNames.has(row.target.name)
+      ? { ...row, selected: true }
+      : row);
+}
+
+function sortObjectRelationRows(rows: RelationRow[]): RelationRow[] {
+  return sortRelationRows(rows).sort((a, b) => Number(Boolean(b.selected)) - Number(Boolean(a.selected)));
+}
+
 function relationSectionsForObject(graph: NormalizedGraph, object: NormalizedObject): RelationSection[] {
   const directSpecial = new Set(["requires", "uses", "proves"]);
   const otherOutgoing: RelationRow[] = [];
@@ -1954,14 +1882,16 @@ function relationSectionsForObject(graph: NormalizedGraph, object: NormalizedObj
     if (directSpecial.has(label)) continue;
     otherOutgoing.push(...relationRowsForEdgeRefs(graph, label, refs));
   }
-  const incoming = Object.entries(object.reverseEdges)
+  const selectedProofNames = selectedProofNamesForObject(graph, object);
+  const incomingRows = Object.entries(object.reverseEdges)
     .flatMap(([label, names]) => relationRowsForTargets(graph, label, names, true));
+  const incoming = applySelectedProofContext(incomingRows, selectedProofNames);
   return [
-    { key: "requires", title: "Requires Context", rows: relationRowsForEdgeRefs(graph, "requires", object.edges.requires) },
-    { key: "uses", title: "Uses", rows: relationRowsForEdgeRefs(graph, "uses", object.edges.uses) },
+    { key: "incoming", title: "Incoming Relations", rows: sortObjectRelationRows(incoming) },
     { key: "proves", title: "Proves", rows: relationRowsForEdgeRefs(graph, "proves", object.edges.proves) },
-    { key: "other", title: "Other Outgoing Relations", rows: sortRelationRows(otherOutgoing) },
-    { key: "incoming", title: "Incoming Relations", rows: sortRelationRows(incoming) }
+    { key: "uses", title: "Uses", rows: relationRowsForEdgeRefs(graph, "uses", object.edges.uses) },
+    { key: "other", title: "Other Outgoing Relations", rows: sortObjectRelationRows(otherOutgoing) },
+    { key: "requires", title: "Requires Context", rows: relationRowsForEdgeRefs(graph, "requires", object.edges.requires) }
   ].filter((section) => section.rows.length > 0);
 }
 
@@ -1977,7 +1907,7 @@ function GeneratedRoutePane(props: {
 }) {
   const routeUiKey = `proof-atlas:route-ui:${props.graph.root}:${props.routeView.path}`;
   const initialRouteUi = readRoutePaneUiState(routeUiKey);
-  const [tab, setTab] = useState<RoutePaneTab>(initialRouteUi.tab === "narrative" ? "narrative" : "tree");
+  const [tab, setTab] = useState<RoutePaneTab>(normalizeRoutePaneTab(initialRouteUi.tab));
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(() => new Set());
   const pendingClick = useRef<number | undefined>(undefined);
   const resolved = useMemo(() => resolveRoute(props.graph, props.routeView.route), [props.graph, props.routeView]);
@@ -1988,18 +1918,54 @@ function GeneratedRoutePane(props: {
   );
   const routeStatusLabel = proofTree.openNodes.length > 0
     ? `open at ${shortName(proofTree.openNodes[0].object.name)}${proofTree.openNodes.length > 1 ? ` +${proofTree.openNodes.length - 1}` : ""}`
-    : resolved.closed && resolved.contentSufficient ? "closed" : "diagnostics";
-  const proofChoiceCount = Object.keys(resolved.selectedProofs).length;
+    : compactRouteStatus(resolved);
+  const verificationLabel = compactVerification(resolved.status.verification);
+  const proofChoiceRows = useMemo(() => {
+    return resolved.nodes
+      .filter((node) => node.object.kind === "math" && node.object.role === "claim")
+      .map((node) => {
+        const selectedName = resolved.selectedProofs[node.object.name];
+        const explicitChoice = props.routeView.route.proof_choices[node.object.name];
+        const selection = routeBoundaryKind(node) === "accepted_input"
+          ? "accepted input"
+          : selectedName
+            ? explicitChoice === selectedName ? "explicit" : "deterministic default"
+            : "missing";
+        const alternatives = (resolved.proofAlternatives[node.object.name] ?? [])
+          .map((name) => props.graph.objectsByName[name])
+          .filter((object): object is NormalizedObject => Boolean(object))
+          .filter((object, index, list) => (
+            object.name !== selectedName
+            && list.findIndex((candidate) => candidate.uid === object.uid) === index
+          ));
+        return {
+          node,
+          selected: selectedName ? props.graph.objectsByName[selectedName] : undefined,
+          selection,
+          alternatives
+        };
+      })
+      .filter((row) => row.alternatives.length > 0)
+      .sort((a, b) => a.node.depth - b.node.depth || a.node.object.name.localeCompare(b.node.object.name));
+  }, [props.graph.objectsByName, props.routeView.route.proof_choices, resolved]);
+  const hasProofChoices = proofChoiceRows.length > 0;
+  const activeRouteTab = tab === "choices" && !hasProofChoices ? "tree" : tab;
+  const routeStatusItems = [
+    { label: "Structure", value: resolved.status.structure },
+    { label: "Context", value: resolved.status.context },
+    { label: "Proof choice", value: resolved.status.proofChoice.mode },
+    { label: "Verification", value: verificationLabel },
+    { label: "Accepted inputs", value: String(resolved.status.acceptedInputs.length) },
+    { label: "Context cuts", value: String(resolved.status.contextCuts.length) },
+    { label: "Blockers", value: String(resolved.status.openBlockers.length) }
+  ];
   const narrativeNotes = useMemo(() => {
-    const relatedNames = new Set([
-      resolved.target.name,
-      proofTree.selectedRootProof?.name
-    ].filter((name): name is string => Boolean(name)));
+    const relatedNames = routeNarrativeRelatedNames(resolved);
     return props.graph.objects
       .filter((object) => object.kind === "note" && object.role === "external_context")
       .filter((object) => (object.edges.related_to ?? []).some((ref) => relatedNames.has(ref.target)))
       .sort((a, b) => a.title.localeCompare(b.title));
-  }, [props.graph.objects, proofTree.selectedRootProof?.name, resolved.target.name]);
+  }, [props.graph.objects, resolved]);
   const objectForDiagnostic = (item: RouteDiagnostic): NormalizedObject | undefined => {
     const candidate = item.objectName ?? item.target;
     if (!candidate) return undefined;
@@ -2014,8 +1980,11 @@ function GeneratedRoutePane(props: {
   }, []);
   useEffect(() => {
     const stored = readRoutePaneUiState(routeUiKey);
-    setTab(stored.tab === "narrative" ? "narrative" : "tree");
+    setTab(normalizeRoutePaneTab(stored.tab));
   }, [routeUiKey]);
+  useEffect(() => {
+    if (tab === "choices" && !hasProofChoices) setTab("tree");
+  }, [hasProofChoices, tab]);
   useEffect(() => {
     writeRoutePaneUiState(routeUiKey, { tab });
   }, [routeUiKey, tab]);
@@ -2056,6 +2025,9 @@ function GeneratedRoutePane(props: {
     event.preventDefault();
     props.onSelect(object);
   };
+  const expandMainPath = () => {
+    setExpandedNodes((current) => mergeUniqueMainPathExpansion(proofTree, current));
+  };
   const toggleProofTreeNode = (id: string) => {
     setExpandedNodes((current) => {
       const next = new Set(current);
@@ -2064,22 +2036,7 @@ function GeneratedRoutePane(props: {
       return next;
     });
   };
-  const staticExportCommand = useMemo(() => {
-    const atlasRoot = props.graph.atlasRoot || "examples/semidiscrete/ProofAtlas";
-    const outputPath = `${atlasRoot.replace(/\/+$/, "")}/.atlas/exports/${routeExportStem(props.routeView.path)}.context.md`;
-    return [
-      `OUT=${quoteShellArg(outputPath)}`,
-      `mkdir -p "$(dirname "$OUT")"`,
-      `npm run atlas -- export ${quoteShellArg(props.routeView.path)} ${quoteShellArg(atlasRoot)} --format markdown > "$OUT"`,
-      `if command -v pbcopy >/dev/null 2>&1; then pbcopy < "$OUT"; fi`,
-      `printf 'Wrote %s\\n' "$OUT"`
-    ].join("; ");
-  }, [props.graph.atlasRoot, props.routeView.path]);
   const copyExportCommand = async () => {
-    if (STATIC_DEMO_MODE) {
-      await props.onCopyText("Copied export command", staticExportCommand);
-      return;
-    }
     try {
       const response = await fetch("/api/export-command", {
         method: "POST",
@@ -2206,17 +2163,20 @@ function GeneratedRoutePane(props: {
           </button>
         </div>
       </div>
-      <div className="route-summary-strip" aria-label="Route summary">
-        <span><b>Route</b><code>{resolved.closed && resolved.contentSufficient ? "closed" : "open"}</code></span>
-        <span><b>Target status</b><code>{resolved.target.status}</code></span>
-        <span><b>Boundary</b><code>{resolved.boundaries.length}</code></span>
-        <span><b>Proof choices</b><code>{proofChoiceCount}</code></span>
-        <span><b>Diagnostics</b><code>{resolved.diagnostics.length}</code></span>
-        <span><b>Tokens</b><code>{formatTokenCount(resolved.totalTokens)}</code></span>
+      <div className="route-status-line" aria-label="Route status">
+        {routeStatusItems.map((item) => (
+          <span className="route-status-item" key={item.label}>
+            <b>{item.label}</b>
+            <code>{item.value}</code>
+          </span>
+        ))}
       </div>
       <div className="segmented-control">
-        <button className={tab === "tree" ? "active" : ""} onClick={() => setTab("tree")}>Proof Tree</button>
-        <button className={tab === "narrative" ? "active" : ""} onClick={() => setTab("narrative")}>Narrative</button>
+        <button className={activeRouteTab === "tree" ? "active" : ""} onClick={() => setTab("tree")}>Proof Tree</button>
+        <button className={activeRouteTab === "narrative" ? "active" : ""} onClick={() => setTab("narrative")}>Narrative</button>
+        {hasProofChoices && (
+          <button className={activeRouteTab === "choices" ? "active" : ""} onClick={() => setTab("choices")}>Proof Choices</button>
+        )}
       </div>
 
       {(proofTree.openNodes.length > 0 || !resolved.contentSufficient) && (
@@ -2264,10 +2224,17 @@ function GeneratedRoutePane(props: {
         </div>
       )}
 
-      {tab === "tree" ? (
+      {activeRouteTab === "tree" ? (
         <div className="generated-proof-tree">
           <div className="proof-tree-actions">
-            <button className="toolbar-button" onClick={() => setExpandedNodes(new Set(proofTree.mainPathNodeIds))}>Expand main path</button>
+            <button
+              className="toolbar-button"
+              disabled={!hasUniqueMainPathExpansionChange(proofTree, expandedNodes)}
+              title="Expand the main proof path, keeping repeated objects collapsed after their first occurrence."
+              onClick={() => expandMainPath()}
+            >
+              Expand main path
+            </button>
             <button className="toolbar-button" onClick={() => setExpandedNodes(new Set())}>Collapse all</button>
           </div>
           <div className="proof-tree">
@@ -2289,10 +2256,83 @@ function GeneratedRoutePane(props: {
             </div>
           )}
         </div>
+      ) : activeRouteTab === "choices" ? (
+        <div className="proof-choices-panel">
+          {proofChoiceRows.map((row) => (
+            <section className="proof-choice-card" key={row.node.object.uid}>
+              <button
+                type="button"
+                className="proof-choice-row proof-choice-claim-row"
+                onClick={() => props.onSelect(row.node.object)}
+                onDoubleClick={(event) => handleGeneratedDoubleClick(event, row.node.object)}
+              >
+                <span className="status-dot" style={{ background: statusColor(row.node.object.status) }} />
+                <span className="proof-choice-title">
+                  <b>{row.node.object.title}</b>
+                  <code>{row.node.object.name}</code>
+                </span>
+                <span className="route-chip route-chip-representation">{row.selection}</span>
+              </button>
+              <div className="proof-choice-proof-list">
+                {row.selected ? (
+                  <button
+                    type="button"
+                    className="proof-choice-row proof-choice-proof-row is-selected"
+                    onClick={() => props.onSelect(row.selected!)}
+                    onDoubleClick={(event) => handleGeneratedDoubleClick(event, row.selected!)}
+                  >
+                    <span className="status-dot" style={{ background: statusColor(row.selected.status) }} />
+                    <span className="proof-choice-title">
+                      <b>{row.selected.title}</b>
+                      <code>{row.selected.name}</code>
+                    </span>
+                    <span className="route-chip route-chip-selected">selected</span>
+                    <span
+                      className="route-chip route-chip-status"
+                      style={{ background: statusColor(row.selected.status) }}
+                    >
+                      {row.selected.status}
+                    </span>
+                  </button>
+                ) : (
+                  <div className="proof-choice-row proof-choice-proof-row missing">
+                    <span className="status-dot" />
+                    <span className="proof-choice-title">
+                      <b>{routeBoundaryKind(row.node) === "accepted_input" ? "Accepted external input" : "Missing proof choice"}</b>
+                      <code>{routeBoundaryKind(row.node) === "accepted_input" ? row.node.object.name : "missing"}</code>
+                    </span>
+                    <span className="route-chip route-chip-selected">selected</span>
+                  </div>
+                )}
+                {row.alternatives.map((proof) => (
+                  <button
+                    key={proof.uid}
+                    type="button"
+                    className="proof-choice-row proof-choice-proof-row"
+                    onClick={() => props.onSelect(proof)}
+                    onDoubleClick={(event) => handleGeneratedDoubleClick(event, proof)}
+                  >
+                    <span className="status-dot" style={{ background: statusColor(proof.status) }} />
+                    <span className="proof-choice-title">
+                      <b>{proof.title}</b>
+                      <code>{proof.name}</code>
+                    </span>
+                    <span
+                      className="route-chip route-chip-status"
+                      style={{ background: statusColor(proof.status) }}
+                    >
+                      {proof.status}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
       ) : (
         <div className="generated-narrative">
           {narrativeNotes.length === 0 ? (
-            <div className="empty-state">No narrative note is related to this route target or selected proof.</div>
+            <div className="empty-state">No narrative note is related to this proof route.</div>
           ) : (
             narrativeNotes.map((note) => (
               <section className="narrative-note" key={note.uid} data-object-uid={note.uid}>
@@ -2590,7 +2630,7 @@ function ObjectCard(props: {
   const blockers = (props.object.reverseEdges.blocked_by ?? [])
     .map((name) => props.graph.objectsByName[name])
     .filter((object): object is NormalizedObject => Boolean(object) && object.status === "open");
-  const isProof = props.object.role === "proof" || props.object.role === "proof_fragment";
+  const isProof = props.object.role === "proof";
   const cardBody = props.expanded ? (
     <MarkdownBody
       graph={props.graph}
@@ -2749,8 +2789,11 @@ function DetailPanel(props: {
           </div>
         </div>
         <div className="detail-badges">
+          <span className="detail-chip detail-chip-display" title="Display as">
+            {props.object.display_as.replaceAll("_", " ")}
+          </span>
           <span className="status-badge" style={{ background: statusColor(props.object.status) }}>{props.object.status}</span>
-          <span>{props.object.importance}</span>
+          {props.object.importance === "main" && <span className="detail-chip detail-chip-emphasis">main</span>}
           {props.object.priority && <b>priority: {props.object.priority}</b>}
         </div>
         <ObjectFactChips object={props.object} />
@@ -2795,13 +2838,7 @@ function DetailPanel(props: {
 }
 
 function RouteInclusionPanel(props: { node: ResolvedRouteNode; diagnostics: RouteDiagnostic[] }) {
-  const cost = props.node.marginalCost;
-  const marginal = [
-    cost.downgrade_to_statement !== undefined ? `statement ${cost.downgrade_to_statement >= 0 ? "-" : "+"}${Math.abs(cost.downgrade_to_statement)}` : undefined,
-    cost.downgrade_to_summary !== undefined ? `summary ${cost.downgrade_to_summary >= 0 ? "-" : "+"}${Math.abs(cost.downgrade_to_summary)}` : undefined,
-    cost.downgrade_to_reference !== undefined ? `reference ${cost.downgrade_to_reference >= 0 ? "-" : "+"}${Math.abs(cost.downgrade_to_reference)}` : undefined,
-    cost.upgrade_to_full !== undefined ? `full +${cost.upgrade_to_full}` : undefined
-  ].filter(Boolean);
+  const boundary = routeBoundaryKind(props.node);
   return (
     <div className="detail-section route-inclusion-panel">
       <div className="detail-label">Route inclusion</div>
@@ -2812,7 +2849,7 @@ function RouteInclusionPanel(props: { node: ResolvedRouteNode; diagnostics: Rout
         <span>representation</span><code>{props.node.representation}</code>
         <span>hardness</span><code>{props.node.hardness}</code>
         <span>depth</span><code>{props.node.depth}</code>
-        <span>tokens</span><code>{props.node.marginalCost.current}</code>
+        {boundary && <><span>boundary type</span><code>{boundary.replace("_", " ")}</code></>}
       </div>
       <div className="route-witnesses">
         {props.node.witnessPaths.slice(0, 3).map((pathItems, index) => (
@@ -2823,12 +2860,6 @@ function RouteInclusionPanel(props: { node: ResolvedRouteNode; diagnostics: Rout
         ))}
         {props.node.witnessPaths.length > 3 && <small>{props.node.witnessPaths.length - 3} more witness path(s)</small>}
       </div>
-      {marginal.length > 0 && (
-        <div className="route-marginal">
-          <b>marginal</b>
-          <span>{marginal.join("; ")}</span>
-        </div>
-      )}
       {props.diagnostics.length > 0 && (
         <div className="route-node-diagnostics">
           {props.diagnostics.map((item) => (
@@ -2875,7 +2906,7 @@ function RelationList(props: {
     clearPendingClick();
     props.onSelect(target);
   };
-  const relationRows: Array<{ label: string; target: NormalizedObject; derived: boolean }> = [];
+  const relationRows: RelationRow[] = [];
   for (const [label, refs] of Object.entries(props.object.edges)) {
     for (const target of edgeTargets(refs)) {
       const object = props.graph.objectsByName[target];
@@ -2890,7 +2921,7 @@ function RelationList(props: {
       }
     }
   }
-  const rows = sortRelationRows(relationRows);
+  const rows = sortObjectRelationRows(applySelectedProofContext(relationRows, selectedProofNamesForObject(props.graph, props.object)));
   return (
     <div className="detail-section">
       <div className="detail-label">Relations</div>
@@ -2902,7 +2933,7 @@ function RelationList(props: {
           onClick={(event) => handleRelationClick(event, row.target)}
           onDoubleClick={(event) => handleRelationDoubleClick(event, row.target)}
         >
-          <span>{relationLabel(row.label)} {row.derived && <em>derived</em>}</span>
+          <span>{relationLabel(row.label)}{row.selected && <em className="edge-selected">Selected</em>}</span>
           <b>{row.target.name}</b>
           <i style={{ color: statusColor(row.target.status) }}>{row.target.status}</i>
         </button>
@@ -3046,8 +3077,9 @@ function RelationColumn(props: {
             <code>{shortName(row.target.name)}</code>
           </span>
           {props.showRelationLabel && (
-            <span className="route-chip route-chip-class">{relationLabel(row.label)}{row.derived ? " derived" : ""}</span>
+            <span className="route-chip route-chip-class">{relationLabel(row.label)}</span>
           )}
+          {row.selected && <span className="route-chip route-chip-selected">Selected</span>}
           <span className="route-chip route-chip-representation">{row.target.display_as}</span>
         </button>
       ))}

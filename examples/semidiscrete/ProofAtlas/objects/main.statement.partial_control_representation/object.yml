@@ -2,7 +2,7 @@ uid: obj_20260611_f020
 name: main.statement.partial_control_representation
 kind: math
 role: claim
-display_as: statement
+display_as: lemma
 importance: supporting
 title: Representation identity for the partial control
 status: needs_check

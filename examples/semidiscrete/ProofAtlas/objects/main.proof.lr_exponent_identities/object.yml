@@ -1,0 +1,16 @@
+uid: obj_20260624_leipr
+name: main.proof.lr_exponent_identities
+kind: math
+role: proof
+display_as: proof
+importance: supporting
+title: Proof of the exponent identities
+status: needs_check
+body:
+  - proof.md
+summary: Computes the elementary sums and products induced by T_j = K 2^{-j rho}.
+edges:
+  proves:
+    - target: main.calculation.lr_exponent_identities
+  uses:
+    - target: main.construction.lr_time_grid

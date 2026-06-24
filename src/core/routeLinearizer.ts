@@ -1,5 +1,6 @@
 import type { NormalizedObject } from "./types";
 import type { ResolvedRoute, ResolvedRouteNode } from "./routeResolver";
+import { routeBoundaryKind } from "./routeResolver";
 
 export interface LinearRouteGroup {
   key: string;
@@ -14,8 +15,8 @@ export interface LinearRoute {
 
 const GROUP_ORDER = [
   "settings",
-  "calculations",
-  "boundaries",
+  "accepted_inputs",
+  "context_cuts",
   "claims",
   "proofs",
   "issues",
@@ -26,21 +27,17 @@ const GROUP_ORDER = [
 
 function groupForObject(object: NormalizedObject, targetName: string, decision: string): { key: string; title: string } {
   if (object.name === targetName) return { key: "target", title: "Target" };
-  if (decision === "boundary") return { key: "boundaries", title: "Accepted Inputs" };
+  if (decision === "boundary") {
+    const boundary = routeBoundaryKind({ object, decision: "boundary" });
+    return boundary === "accepted_input"
+      ? { key: "accepted_inputs", title: "Accepted Inputs" }
+      : { key: "context_cuts", title: "Context Cuts" };
+  }
   if (object.kind === "math" && ["setting", "notation", "definition", "assumption", "problem"].includes(object.role)) {
     return { key: "settings", title: "Definitions and Settings" };
   }
-  if (object.kind === "math" && object.role === "model") {
-    return { key: "settings", title: "Definitions and Settings" };
-  }
-  if (
-    object.kind === "math"
-    && (["statement", "estimate"].includes(object.display_as) || ["construction", "calculation"].includes(object.role))
-  ) {
-    return { key: "calculations", title: "Statements, Estimates, and Calculations" };
-  }
   if (object.kind === "math" && object.role === "claim") return { key: "claims", title: "Supporting Claims" };
-  if (object.kind === "math" && ["proof", "proof_fragment"].includes(object.role)) return { key: "proofs", title: "Proofs and Proof Fragments" };
+  if (object.kind === "math" && object.role === "proof") return { key: "proofs", title: "Proofs" };
   if (object.kind === "issue") return { key: "issues", title: "Open Issues" };
   if (object.kind === "note" || object.provenance !== "internal") return { key: "sources", title: "Source Manifest" };
   return { key: "other", title: "Other Context" };

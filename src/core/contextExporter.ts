@@ -3,6 +3,7 @@ import path from "node:path";
 import { hardEdgeTargets } from "./edgeUtils";
 import { parseMarkdownReferences } from "./markdownRefs";
 import type { NormalizedGraph, NormalizedObject, RouteView } from "./types";
+import { routeBoundaryKind, routeStatusLine } from "./routeResolver";
 import type { ResolvedRoute, RouteDiagnostic, ResolvedRouteNode } from "./routeResolver";
 import { linearizeRoute } from "./routeLinearizer";
 import { deriveRouteProofTree, type ProofTreeNode } from "./routeProofTree";
@@ -48,7 +49,7 @@ async function readBodyFile(graph: NormalizedGraph, object: NormalizedObject, bo
 
 function statementSource(object: NormalizedObject): string | undefined {
   if (object.body.includes("statement.md")) return "statement.md";
-  if (object.kind === "math" && ["setting", "notation", "definition", "model", "construction", "calculation"].includes(object.role)) {
+  if (object.kind === "math" && ["setting", "notation", "definition"].includes(object.role)) {
     return object.body[0];
   }
   return undefined;
@@ -139,18 +140,14 @@ function rewriteAtlasLinks(
 
 function sectionForNode(node: ResolvedRouteNode, targetName: string): string {
   if (node.object.name === targetName) return "Target";
-  if (node.decision === "boundary") return "Accepted Inputs";
-  if (node.object.kind === "math" && ["setting", "notation", "definition", "assumption", "problem", "model"].includes(node.object.role)) {
+  const boundary = routeBoundaryKind(node);
+  if (boundary === "accepted_input") return "Accepted Inputs";
+  if (boundary === "context_cut") return "Context Cuts";
+  if (node.object.kind === "math" && ["setting", "notation", "definition", "assumption", "problem"].includes(node.object.role)) {
     return "Definitions and Settings";
   }
-  if (
-    node.object.kind === "math"
-    && (["statement", "estimate"].includes(node.object.display_as) || ["construction", "calculation"].includes(node.object.role))
-  ) {
-    return "Statements, Estimates, and Calculations";
-  }
   if (node.object.kind === "math" && node.object.role === "claim") return "Supporting Claims";
-  if (node.object.kind === "math" && ["proof", "proof_fragment"].includes(node.object.role)) return "Proofs and Proof Fragments";
+  if (node.object.kind === "math" && node.object.role === "proof") return "Proofs";
   if (node.object.kind === "issue") return "Open Issues";
   return "Citation and Source Notes";
 }
@@ -258,9 +255,10 @@ async function citationReferenceLine(object: NormalizedObject): Promise<string |
 }
 
 function citationRole(node: ResolvedRouteNode): string {
-  if (node.decision === "boundary" || node.inclusionClass === "boundary") {
+  if (routeBoundaryKind(node) === "accepted_input") {
     return "accepted input";
   }
+  if (routeBoundaryKind(node) === "context_cut") return "context cut";
   if (node.object.source_result || (node.object.provenance !== "internal" && node.object.kind === "math")) {
     return "source of imported statement";
   }
@@ -306,7 +304,11 @@ const PROOF_TREE_MAX_NODES = 80;
 const PROOF_TREE_MAX_DEPTH = 10;
 
 function proofTreeAnnotation(node: ProofTreeNode): string {
-  if (node.role === "boundary") return " [accepted input]";
+  if (node.role === "boundary") {
+    return routeBoundaryKind(node.routeNode ?? { object: node.object, decision: "boundary" }) === "accepted_input"
+      ? " [accepted input]"
+      : " [context cut]";
+  }
   if (node.role === "shared_reference") return " [shared]";
   if (node.role === "open") return " [open]";
   return "";
@@ -370,6 +372,17 @@ function acceptedInputsIntro(nodes: ResolvedRouteNode[]): string[] {
   ];
 }
 
+function contextCutsIntro(nodes: ResolvedRouteNode[]): string[] {
+  if (!nodes.length) {
+    return ["No internal context cuts are included in this context."];
+  }
+  return [
+    "The following internal or support objects are included without expanding their outgoing dependencies.",
+    "",
+    ...nodes.map((node) => `- \`${node.object.name}\``)
+  ];
+}
+
 async function objectSection(
   graph: NormalizedGraph,
   node: ResolvedRouteNode,
@@ -386,7 +399,10 @@ async function objectSection(
     `Object: \`${node.object.name}\``
   ];
   if (node.decision === "boundary") {
-    parts.push("", "> Accepted input; proof not included.");
+    const boundary = routeBoundaryKind(node);
+    parts.push("", boundary === "accepted_input"
+      ? "> Accepted input; proof not included."
+      : "> Context cut; dependencies are not expanded in this context.");
   }
   if (rewritten) {
     parts.push("", rewritten);
@@ -400,6 +416,7 @@ export function createLocalManifest(graph: NormalizedGraph, route: ResolvedRoute
     graph_built_at: graph.builtAt,
     target: route.target.name,
     profile: route.profile,
+    route_status: route.status,
     selected_proofs: route.selectedProofs,
     boundaries: route.boundaries,
     object_count: route.nodes.length,
@@ -418,8 +435,7 @@ export function createLocalManifest(graph: NormalizedGraph, route: ResolvedRoute
       representation: node.representation,
       decision: node.decision,
       inclusion_class: node.inclusionClass,
-      hardness: node.hardness,
-      token_estimates: node.tokenEstimates
+      hardness: node.hardness
     }))
   };
 }
@@ -440,11 +456,14 @@ export async function exportCloudMarkdown(graph: NormalizedGraph, route: Resolve
     sections.set(section, [...(sections.get(section) ?? []), node]);
   }
   const acceptedInputNodes = sections.get("Accepted Inputs") ?? [];
+  const contextCutNodes = sections.get("Context Cuts") ?? [];
 
   const out: string[] = [
     `# Proof Verification Context: ${route.target.title}`,
     "",
     "This Markdown file isolates the local context for checking whether the included proof route establishes the target statement. It is not a proof verdict; workflow status, citation trust, export diagnostics, and export-integrity metadata are intentionally omitted from this context.",
+    "",
+    `Route status: ${routeStatusLine(route.status)}.`,
     "",
     ...proofRouteSection(route, graph),
     "",
@@ -457,12 +476,18 @@ export async function exportCloudMarkdown(graph: NormalizedGraph, route: Resolve
     out.push("", await objectSection(graph, node, included, diagnostics, collectReference), "");
   }
 
+  if (contextCutNodes.length) {
+    out.push("", "## Context Cuts", "", ...contextCutsIntro(contextCutNodes));
+    for (const node of contextCutNodes) {
+      out.push("", await objectSection(graph, node, included, diagnostics, collectReference), "");
+    }
+  }
+
   const orderedSections = [
     "Target",
     "Definitions and Settings",
-    "Statements, Estimates, and Calculations",
     "Supporting Claims",
-    "Proofs and Proof Fragments",
+    "Proofs",
     "Open Issues",
     "Citation and Source Notes"
   ];
@@ -501,9 +526,9 @@ export function exportJson(graph: NormalizedGraph, route: ResolvedRoute): Export
         profile: route.profile,
         selected_proofs: route.selectedProofs,
         boundaries: route.boundaries,
-        total_tokens: route.totalTokens,
         closed: route.closed,
         content_sufficient: route.contentSufficient,
+        route_status: route.status,
         nodes: route.nodes.map((node) => ({
           name: node.object.name,
           uid: node.object.uid,
@@ -513,9 +538,7 @@ export function exportJson(graph: NormalizedGraph, route: ResolvedRoute): Export
           depth: node.depth,
           hardness: node.hardness,
           direct: node.direct,
-          witness_paths: node.witnessPaths,
-          token_estimates: node.tokenEstimates,
-          marginal_cost: node.marginalCost
+          witness_paths: node.witnessPaths
         })),
         edges: route.edges,
         diagnostics: route.diagnostics

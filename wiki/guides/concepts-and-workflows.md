@@ -24,9 +24,8 @@
 Proof Atlas 不先问“这一段放在第几章”，而是先问“这是什么对象”：
 
 - `claim`：需要证明的结论。
-- `proof` / `proof_fragment`：证明对象。
-- `setting` / `definition` / `notation`：读懂陈述需要的背景。
-- `model` / `construction` / `calculation`：模型、构造和计算。
+- `proof`：完整证明、局部论证、计算、构造过程或失败/草稿证明。
+- `setting` / `definition` / `notation` / `assumption`：读懂陈述需要的背景和对象引入。
 - `issue`：阻塞、风险、待办或缺口。
 - `literature` / `source`：文献和来源。
 
@@ -96,7 +95,7 @@ npm run atlas -- dev examples/semidiscrete --port 3217
 
 1. 在左栏打开对应的 Generated View，例如 `Why null controllability holds`。
 2. 先看 `Proof Tree` 顶部的 target claim 和 selected proof。
-3. 用 disclosure 箭头逐层展开 proof 的直接 uses；需要整体展开时再用 `Expand main path`。
+3. 用 disclosure 箭头逐层展开 proof 的直接 uses；需要整体查看时用 `Expand main path`。它会沿当前树的展示顺序深度展开，但同一对象只自动展开第一次出现的位置。
 4. 单击某个节点正文，在右栏查看 `Route inclusion`。
 5. 重点看这些字段：
 
@@ -106,7 +105,7 @@ npm run atlas -- dev examples/semidiscrete --port 3217
 | `witness path` | 这个节点为什么被纳入。 |
 | `representation` | hard dependency 是否至少有 statement。 |
 | `diagnostics` | 是否有 proof choice、statement 或 proof-tree target 问题。 |
-| `marginal cost` | 如果要裁剪 context，可以从哪里降级。 |
+| `boundary type` | boundary 是 accepted input 还是 context cut。 |
 
 6. 点击 `Route` 复制 CLI 命令，在终端复现解析结果：
 
@@ -163,12 +162,12 @@ npm run atlas -- check --strict <project>
 
 ### 场景五：新增一个数学对象
 
-目标：把一个新引理、证明、构造或 issue 放进对象图。
+目标：把一个新引理、证明、定义、setting 或 issue 放进对象图。
 
 1. 先判断对象角色：
 
 ```text
-claim / proof / setting / definition / model / construction / calculation / issue
+claim / proof / setting / notation / definition / assumption / issue
 ```
 
 2. 用 CLI 创建对象：

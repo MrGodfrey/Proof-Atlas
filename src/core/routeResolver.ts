@@ -38,6 +38,35 @@ export interface RouteNodeCost {
   upgrade_to_full?: number;
 }
 
+export type RouteBoundaryKind = "accepted_input" | "context_cut";
+export type RouteProofChoiceMode = "explicit" | "default" | "mixed" | "missing";
+
+export interface RouteVerificationCounts {
+  checked: number;
+  needs_check: number;
+  partial: number;
+  draft: number;
+}
+
+export interface RouteProofChoiceStatus {
+  mode: RouteProofChoiceMode;
+  explicit: number;
+  default: number;
+  missing: number;
+  total: number;
+}
+
+export interface RouteStatus {
+  structure: "closed" | "open";
+  context: "sufficient" | "insufficient";
+  proofChoice: RouteProofChoiceStatus;
+  verification: RouteVerificationCounts;
+  acceptedInputs: string[];
+  contextCuts: string[];
+  openBlockers: string[];
+  exportReadiness: "ready" | "incomplete";
+}
+
 export interface ResolvedRouteNode {
   object: NormalizedObject;
   role: RouteNodeRole;
@@ -74,6 +103,7 @@ export interface ResolvedRoute {
   totalTokens: number;
   closed: boolean;
   contentSufficient: boolean;
+  status: RouteStatus;
 }
 
 export interface ResolveRouteOptions {
@@ -116,13 +146,43 @@ const SUPPORT_ROLES = new Set([
   "setting",
   "notation",
   "definition",
-  "model",
-  "assumption",
-  "construction",
-  "calculation",
-  "example",
-  "counterexample"
+  "assumption"
 ]);
+
+function isAcceptedInputObject(object: NormalizedObject): boolean {
+  return object.kind === "math"
+    && object.role === "claim"
+    && (object.provenance !== "internal" || object.origin.kind !== "project");
+}
+
+export function routeBoundaryKind(node: Pick<ResolvedRouteNode, "object" | "decision">): RouteBoundaryKind | undefined {
+  if (node.decision !== "boundary") return undefined;
+  return isAcceptedInputObject(node.object) ? "accepted_input" : "context_cut";
+}
+
+function emptyRouteStatus(): RouteStatus {
+  return {
+    structure: "open",
+    context: "insufficient",
+    proofChoice: {
+      mode: "missing",
+      explicit: 0,
+      default: 0,
+      missing: 0,
+      total: 0
+    },
+    verification: {
+      checked: 0,
+      needs_check: 0,
+      partial: 0,
+      draft: 0
+    },
+    acceptedInputs: [],
+    contextCuts: [],
+    openBlockers: [],
+    exportReadiness: "incomplete"
+  };
+}
 
 function resolveObject(graph: NormalizedGraph, nameOrUid: string): NormalizedObject | undefined {
   return graph.objectsByName[nameOrUid] ?? graph.objectsByUid[nameOrUid] ?? graph.objectsByUid[graph.aliases[nameOrUid]];
@@ -137,7 +197,7 @@ function nodeRole(object: NormalizedObject): RouteNodeRole {
 function proofCandidates(graph: NormalizedGraph, claim: NormalizedObject): NormalizedObject[] {
   return (claim.reverseEdges.proved_by ?? [])
     .map((name) => graph.objectsByName[name])
-    .filter((object): object is NormalizedObject => Boolean(object) && object.kind === "math" && ["proof", "proof_fragment"].includes(object.role));
+    .filter((object): object is NormalizedObject => Boolean(object) && object.kind === "math" && object.role === "proof");
 }
 
 function proofSortKey(object: NormalizedObject): string {
@@ -248,7 +308,7 @@ function suggestedRepresentation(
   if (selectedProof) return "full";
   if (hardness === "soft") return object.summary ? "summary" : "reference";
   if (object.kind === "math" && object.role === "claim") return "statement";
-  if (object.kind === "math" && ["proof", "proof_fragment"].includes(object.role)) return "full";
+  if (object.kind === "math" && object.role === "proof") return "full";
   if (object.provenance !== "internal") return "statement";
   return hasStatementRepresentation(object) ? "statement" : "full";
 }
@@ -284,7 +344,7 @@ function buildResolvedEdges(nodes: Map<string, MutableNode>): ResolvedRouteEdge[
 
 function isSpineCandidate(object: NormalizedObject): boolean {
   if (object.kind !== "math") return false;
-  if (["proof", "proof_fragment", "construction", "calculation"].includes(object.role)) return true;
+  if (object.role === "proof") return true;
   return isProofObligationObject(object);
 }
 
@@ -355,13 +415,144 @@ function dedupeDiagnostics(diagnostics: RouteDiagnostic[]): RouteDiagnostic[] {
   return out;
 }
 
+function verificationCounts(nodes: ResolvedRouteNode[]): RouteVerificationCounts {
+  const counts: RouteVerificationCounts = {
+    checked: 0,
+    needs_check: 0,
+    partial: 0,
+    draft: 0
+  };
+  for (const node of nodes) {
+    if (node.object.status === "checked") counts.checked += 1;
+    if (node.object.status === "needs_check") counts.needs_check += 1;
+    if (node.object.status === "partial") counts.partial += 1;
+    if (node.object.status === "draft") counts.draft += 1;
+  }
+  return counts;
+}
+
+function openBlockerNames(graph: NormalizedGraph, nodes: ResolvedRouteNode[]): string[] {
+  const blockers = new Map<string, NormalizedObject>();
+  for (const node of nodes) {
+    for (const name of node.object.reverseEdges.blocked_by ?? []) {
+      const object = graph.objectsByName[name];
+      if (object?.kind === "issue" && object.status === "open") blockers.set(object.name, object);
+    }
+  }
+  return [...blockers.values()].sort((a, b) => a.name.localeCompare(b.name)).map((object) => object.name);
+}
+
+function proofChoiceStatus(
+  nodes: ResolvedRouteNode[],
+  proofChoices: Record<string, string>,
+  selectedProofs: Record<string, string>
+): RouteProofChoiceStatus {
+  let explicit = 0;
+  let defaultChoice = 0;
+  let missing = 0;
+
+  for (const node of nodes) {
+    if (!isProofObligationObject(node.object)) continue;
+    if (routeBoundaryKind(node) === "accepted_input") continue;
+    const selected = selectedProofs[node.object.name];
+    if (!selected) {
+      missing += 1;
+      continue;
+    }
+    if (proofChoices[node.object.name] === selected) explicit += 1;
+    else defaultChoice += 1;
+  }
+
+  const total = explicit + defaultChoice + missing;
+  const activeKinds = [explicit > 0, defaultChoice > 0, missing > 0].filter(Boolean).length;
+  const mode: RouteProofChoiceMode = missing > 0 && activeKinds === 1
+    ? "missing"
+    : activeKinds > 1
+      ? "mixed"
+      : explicit > 0
+        ? "explicit"
+        : defaultChoice > 0
+          ? "default"
+          : "missing";
+
+  return {
+    mode,
+    explicit,
+    default: defaultChoice,
+    missing,
+    total
+  };
+}
+
+function deriveRouteStatus(
+  graph: NormalizedGraph,
+  nodes: ResolvedRouteNode[],
+  diagnostics: RouteDiagnostic[],
+  closed: boolean,
+  proofChoices: Record<string, string>,
+  selectedProofs: Record<string, string>
+): RouteStatus {
+  const acceptedInputs = nodes
+    .filter((node) => routeBoundaryKind(node) === "accepted_input")
+    .map((node) => node.object.name)
+    .sort();
+  const contextCuts = nodes
+    .filter((node) => routeBoundaryKind(node) === "context_cut")
+    .map((node) => node.object.name)
+    .sort();
+  const blockers = openBlockerNames(graph, nodes);
+  const hasError = diagnostics.some((item) => item.severity === "error");
+  const context: RouteStatus["context"] = hasError || contextCuts.length > 0 ? "insufficient" : "sufficient";
+  const structure: RouteStatus["structure"] = closed ? "closed" : "open";
+  const exportReadiness: RouteStatus["exportReadiness"] = structure === "closed" && context === "sufficient" && blockers.length === 0
+    ? "ready"
+    : "incomplete";
+
+  return {
+    structure,
+    context,
+    proofChoice: proofChoiceStatus(nodes, proofChoices, selectedProofs),
+    verification: verificationCounts(nodes),
+    acceptedInputs,
+    contextCuts,
+    openBlockers: blockers,
+    exportReadiness
+  };
+}
+
+function plural(value: number, singular: string, pluralValue = `${singular}s`): string {
+  return `${value} ${value === 1 ? singular : pluralValue}`;
+}
+
+export function routeStatusLine(status: RouteStatus): string {
+  const verificationNeeds = [
+    status.verification.needs_check
+      ? `${plural(status.verification.needs_check, "node")} ${status.verification.needs_check === 1 ? "needs" : "need"} check`
+      : undefined,
+    status.verification.partial ? `${plural(status.verification.partial, "partial node")}` : undefined,
+    status.verification.draft ? `${plural(status.verification.draft, "draft node")}` : undefined
+  ].filter((part): part is string => Boolean(part));
+  const verification = verificationNeeds.length ? verificationNeeds.join(", ") : "all included nodes checked or externally accepted";
+  return [
+    `structure ${status.structure}`,
+    `context ${status.context}`,
+    `${status.proofChoice.mode} proof choices`,
+    verification,
+    status.acceptedInputs.length ? plural(status.acceptedInputs.length, "accepted input") : "no accepted inputs",
+    status.contextCuts.length ? plural(status.contextCuts.length, "context cut") : "no context cuts",
+    status.openBlockers.length ? plural(status.openBlockers.length, "open blocker") : "no open blockers"
+  ].join("; ");
+}
+
 export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOptions | RouteView): ResolvedRoute {
   const routeInput = isRouteView(options);
   const targetName = options.target;
   const target = resolveObject(graph, targetName);
   const profile = options.profile ?? "proof";
   const proofChoices = routeInput ? options.proof_choices : options.proofChoices ?? {};
-  const boundaries = new Set(routeInput ? options.boundaries : options.boundaries ?? []);
+  const requestedBoundaries = routeInput ? options.boundaries : options.boundaries ?? [];
+  const boundaries = new Set(requestedBoundaries.map((name) => resolveObject(graph, name)?.name ?? name));
+  const invalidBoundaryNames = new Set<string>();
   const representationOverrides = routeInput ? options.representation : options.representation ?? {};
   const orderHints = routeInput ? options.render.order_hints ?? [] : [];
 
@@ -390,8 +581,21 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
       diagnostics,
       totalTokens: 0,
       closed: false,
-      contentSufficient: false
+      contentSufficient: false,
+      status: emptyRouteStatus()
     };
+  }
+
+  for (const name of boundaries) {
+    if (name !== target.name) continue;
+    invalidBoundaryNames.add(name);
+    diagnostics.push({
+      severity: "error",
+      code: "boundary_is_target",
+      message: `Route boundary ${name} cannot be the route target.`,
+      objectName: target.name,
+      target: name
+    });
   }
 
   const include = (
@@ -408,6 +612,9 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
       if (hardness === "hard") existing.hardness = "hard";
       existing.direct ||= direct;
       existing.selectedProof ||= selectedProof;
+      if (invalidBoundaryNames.has(object.name) && existing.decision === "boundary") {
+        existing.decision = "expanded";
+      }
       const witness = path.includes(object.name) ? path : [...path, object.name];
       if (existing.witnessPaths.length < MAX_WITNESS_PATHS && !existing.witnessPaths.some((item) => item.join(" -> ") === witness.join(" -> "))) {
         existing.witnessPaths.push(witness);
@@ -417,7 +624,7 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
     const node: MutableNode = {
       object,
       role: nodeRole(object),
-      decision: boundaries.has(object.name) ? "boundary" : "expanded",
+      decision: boundaries.has(object.name) && !invalidBoundaryNames.has(object.name) ? "boundary" : "expanded",
       depth,
       hardness,
       direct,
@@ -527,7 +734,7 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
     }
     const proof = chooseProof(graph, claim, proofChoices[claim.name], diagnostics, proofAlternatives);
     if (!proof) {
-      if (claim.provenance !== "internal") {
+      if (isAcceptedInputObject(claim)) {
         node!.decision = "boundary";
       } else {
         node!.decision = "unresolved";
@@ -541,6 +748,18 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
       return;
     }
     selectedProofs[claim.name] = proof.name;
+    if (boundaries.has(proof.name)) {
+      invalidBoundaryNames.add(proof.name);
+      const proofNode = nodes.get(proof.name);
+      if (proofNode?.decision === "boundary") proofNode.decision = "expanded";
+      diagnostics.push({
+        severity: "error",
+        code: "boundary_is_selected_proof",
+        message: `Route boundary ${proof.name} cannot be the selected proof for ${claim.name}.`,
+        objectName: claim.name,
+        target: proof.name
+      });
+    }
     const nextStack = new Set(stack);
     nextStack.add(`claim:${claim.name}`);
     include(proof, [...path, proof.name], depth + 1, "hard", true, true);
@@ -555,7 +774,7 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
     diagnostics.push({
       severity: "error",
       code: "unsupported_proof_tree_target",
-      message: "Proof tree target must be a math claim that is not displayed as statement or estimate.",
+      message: "Proof tree target must be a math claim.",
       objectName: target.name
     });
   }
@@ -567,8 +786,16 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
   }
 
   for (const name of boundaries) {
-    const object = resolveObject(graph, name);
-    if (object) include(object, [target.name, object.name], 1, "hard").decision = "boundary";
+    if (invalidBoundaryNames.has(name)) continue;
+    const node = nodes.get(name);
+    if (!node || node.decision !== "boundary") {
+      diagnostics.push({
+        severity: "warning",
+        code: "unused_boundary",
+        message: `Route boundary ${name} was not encountered from ${target.name}.`,
+        target: name
+      });
+    }
   }
 
   const spineNames = computeSpineNames(graph, target, nodes, selectedProofs);
@@ -617,11 +844,21 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
     };
   });
 
+  for (const node of resolvedNodesWithoutClass) {
+    if (routeBoundaryKind(node) !== "context_cut") continue;
+    diagnostics.push({
+      severity: "warning",
+      code: "boundary_kind_warning",
+      message: `${node.object.name} is a context cut, not an external accepted input.`,
+      objectName: node.object.name
+    });
+  }
+
   const uniqueDiagnostics = dedupeDiagnostics(diagnostics);
   const openNames = openObjectNames(uniqueDiagnostics);
   const resolvedNodes: ResolvedRouteNode[] = resolvedNodesWithoutClass.map((node) => {
     let inclusionClass: RouteInclusionClass = spineNames.has(node.object.name) ? "spine" : "vocabulary";
-    if (node.decision === "boundary" || boundaries.has(node.object.name)) inclusionClass = "boundary";
+    if (node.decision === "boundary") inclusionClass = "boundary";
     if (node.decision === "unresolved" || openNames.has(node.object.name)) inclusionClass = "open";
     return { ...node, inclusionClass };
   }).sort((a, b) => a.depth - b.depth || a.object.name.localeCompare(b.object.name));
@@ -629,6 +866,11 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
   const totalTokens = resolvedNodes.reduce((sum, node) => sum + node.marginalCost.current, 0);
   const closed = !uniqueDiagnostics.some((item) => ["error"].includes(item.severity) && item.code !== "representation_below_floor" && item.code !== "missing_statement_representation");
   const contentSufficient = !uniqueDiagnostics.some((item) => item.severity === "error");
+  const encounteredBoundaries = [...boundaries].filter((name) => (
+    !invalidBoundaryNames.has(name)
+    && resolvedNodes.some((node) => node.object.name === name && node.decision === "boundary")
+  ));
+  const status = deriveRouteStatus(graph, resolvedNodes, uniqueDiagnostics, closed, proofChoices, selectedProofs);
 
   return {
     target,
@@ -637,11 +879,12 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
     edges: buildResolvedEdges(nodes),
     proofAlternatives,
     selectedProofs,
-    boundaries: [...boundaries],
+    boundaries: encounteredBoundaries,
     orderHints,
     diagnostics: uniqueDiagnostics,
     totalTokens,
     closed,
-    contentSufficient
+    contentSufficient,
+    status
   };
 }

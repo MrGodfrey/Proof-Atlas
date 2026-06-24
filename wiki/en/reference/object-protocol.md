@@ -114,7 +114,7 @@ note
 
 Meaning:
 
-- `math`: mathematical content, including problems, settings, models, definitions, claims, proofs, constructions, calculations, examples, and counterexamples.
+- `math`: mathematical content, including problems, settings, notation, definitions, assumptions, claims, and proof material.
 - `issue`: research problems, gaps, risks, or checks.
 - `note`: non-core mathematical objects, including literature notes, AI discussions, history, review comments, and external context.
 
@@ -127,15 +127,9 @@ problem
 setting
 notation
 definition
-model
 assumption
 claim
 proof
-proof_fragment
-construction
-calculation
-example
-counterexample
 ```
 
 `issue` roles:
@@ -164,15 +158,17 @@ external_context
 
 Recommended usage:
 
-- Theorems, lemmas, propositions, corollaries, important estimates: `kind: math`, `role: claim`.
-- Complete proofs: `kind: math`, `role: proof`.
-- Local proof fragments or failed routes: `kind: math`, `role: proof_fragment`.
-- Constant estimates and algebraic reductions: `kind: math`, `role: calculation`.
-- Control constructions, time grids, and cutoff functions: `kind: math`, `role: construction`.
+- Mathematical questions or research goals: `kind: math`, `role: problem`.
+- Ambient contexts and standing-hypothesis containers: `kind: math`, `role: setting`.
+- Pure symbolic conventions: `kind: math`, `role: notation`.
+- Introduced objects, systems, operators, grids, weights, or constructed objects: `kind: math`, `role: definition`.
+- Accepted hypotheses for the current theory or route: `kind: math`, `role: assumption`.
+- Theorems, lemmas, propositions, corollaries, conjectures, reusable estimates, or formula-like assertions: `kind: math`, `role: claim`.
+- Complete proofs, local arguments, derivations, calculations, construction processes, failed routes, or proof drafts: `kind: math`, `role: proof`.
 
 ## `display_as`
 
-Controls visual presentation in the web UI. `role` says what the object is; `display_as` says how it appears on the page. For `role: claim`, `display_as: statement` and `display_as: estimate` also mark the claim as citable input rather than an automatic proof-tree obligation.
+Controls visual presentation in the web UI. `role` says the object's mathematical responsibility in the atlas; `display_as` only says which paper-style label the reader sees. `display_as` does not participate in proof-obligation decisions, but it must be compatible with `kind` / `role`; for example, `role: assumption` cannot be displayed as `lemma`, because a lemma is a provable claim.
 
 Allowed values:
 
@@ -183,19 +179,13 @@ setting
 notation
 definition
 assumption
-statement
 theorem
 lemma
 proposition
 corollary
 conjecture
 proof
-proof_fragment
-estimate
-construction
-calculation
 example
-counterexample
 remark
 issue
 gap
@@ -217,15 +207,30 @@ Default mapping:
 | `math.setting` | `setting` |
 | `math.notation` | `notation` |
 | `math.definition` | `definition` |
-| `math.model` | `plain` |
 | `math.assumption` | `assumption` |
 | `math.claim` | `theorem` |
 | `math.proof` | `proof` |
-| `math.proof_fragment` | `proof_fragment` |
-| `math.construction` | `construction` |
-| `math.calculation` | `calculation` |
-| `math.example` | `example` |
-| `math.counterexample` | `counterexample` |
+| `issue.gap` | `gap` |
+| `issue.question` | `question` |
+| `issue.todo` | `todo` |
+| `issue.risk` / `possible_error` / `review_concern` / `missing_reference` | `warning` |
+| `note.literature` | `literature_note` |
+| `note.ai_note` | `ai_note` |
+| `note.meeting` | `meeting_note` |
+| `note.review_note` | `review_note` |
+| `note.historical` / `scratch` / `external_context` | `note` |
+
+Hard compatibility rules:
+
+| `kind` / `role` | Allowed `display_as` |
+|---|---|
+| `math.problem` | `problem` |
+| `math.setting` | `setting` |
+| `math.notation` | `notation` |
+| `math.definition` | `definition` |
+| `math.assumption` | `assumption` |
+| `math.claim` | `plain`, `theorem`, `lemma`, `proposition`, `corollary`, `conjecture` |
+| `math.proof` | `proof` |
 | `issue.gap` | `gap` |
 | `issue.question` | `question` |
 | `issue.todo` | `todo` |
@@ -242,12 +247,12 @@ When to override `display_as`:
 |---|---|---|
 | A `role: claim` is the main theorem | `display_as: theorem` | Matches mathematical reader expectations in pages and exports. |
 | A `role: claim` is a lemma | `display_as: lemma` | Still a claim, so routes can find proof, but displayed as lemma. |
-| A `role: claim` is a citable identity, formula-like fact, or named statement | `display_as: statement` | Avoids treating TeX equation labels as object types; marks statement-level input without automatic proof search. |
-| A `role: claim` is a key estimate | `display_as: estimate` | Similar to `statement`, but for inequalities, spectral bounds, energy estimates, and related dependency material. |
-| A `role: model` is ordinary model prose | omit or `display_as: plain` | Avoids making model text look like a theorem or definition. |
+| A `role: claim` is a named identity, formula-like fact, or estimate | `display_as: lemma` / `proposition` / `plain` | It is still a claim; the route must explain why it is usable. Put content words like “estimate” in the title, summary, or body. |
+| A system, model, grid, or operator is being introduced | `role: definition`, `display_as: definition` | `model` is no longer a math role; these objects should be definitions or settings. |
+| An internal construction, algebraic reduction, or local calculation belongs inside a proof route | `role: proof`, `display_as: proof` | Completeness and reliability belong in `status`, not in `proof_fragment` / `calculation` / `construction` roles. |
 | Literature object | `kind: note`, `role: literature`, `display_as: literature_note` | Lets UI and export treat it as source material. |
 
-Note: the code predicate for a proof obligation is `kind: math`, `role: claim`, and `display_as` not equal to `statement` or `estimate`. Therefore `plain`, `theorem`, `lemma`, `proposition`, `corollary`, and `conjecture` claims can be Proof Tree roots; `display_as: statement` or `display_as: estimate` is reference/context material and cannot be a Generated View root.
+Note: the code predicate for a proof obligation is only `kind: math`, `role: claim`. `plain`, `theorem`, `lemma`, `proposition`, `corollary`, and `conjecture` claims can be Proof Tree roots; changing `display_as` only changes a claim's presentation label, not whether the resolver looks for proof.
 
 ## `importance`
 
@@ -435,7 +440,7 @@ Default filenames for new objects:
 | Object type | Default body file |
 |---|---|
 | `math.claim` | `statement.md` |
-| `math.proof` / `math.proof_fragment` | `proof.md` |
+| `math.proof` | `proof.md` |
 | `issue.*` | `note.md` |
 | `note.*` | `note.md` |
 | other math objects | `body.md` |
@@ -450,8 +455,8 @@ Body rules:
 Statement representation extraction depends on body filenames:
 
 - If `statement.md` exists, `statement` representation uses it.
-- For `setting`, `notation`, `definition`, `model`, `construction`, and `calculation`, when `statement.md` is absent, the first body file can be used as statement source.
-- For `claim`, `problem`, `assumption`, `proof`, `proof_fragment`, and `note`, when `statement.md` is absent, statement export is not reliable.
+- For `setting`, `notation`, and `definition`, when `statement.md` is absent, the first body file can be used as statement source.
+- For `claim`, `problem`, `assumption`, `proof`, and `note`, when `statement.md` is absent, statement export is not reliable.
 
 ## `edges`
 
@@ -476,7 +481,7 @@ Fields:
 - `strength`: optional, `hard` or `soft`, default `hard`.
 - `reason`: optional dependency reason.
 
-`requires` means context needed to read or state the current object. `uses` means mathematical dependencies actually used for proof, derivation, construction, or calculation. Claims usually use `requires`; proofs and proof fragments use `proves` and `uses`.
+`requires` means context needed to read or state the current object. `uses` means mathematical dependencies actually used for proof, derivation, construction, or calculation. Claims usually use `requires`; proofs use `proves` and `uses`.
 
 Strict schema rejects old string-list edges:
 

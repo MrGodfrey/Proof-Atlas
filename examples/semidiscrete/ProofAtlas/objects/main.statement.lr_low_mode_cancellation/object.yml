@@ -2,7 +2,7 @@ uid: obj_20260611_f022
 name: main.statement.lr_low_mode_cancellation
 kind: math
 role: claim
-display_as: statement
+display_as: lemma
 importance: supporting
 title: Low-mode cancellation after the controlled subinterval
 status: needs_check

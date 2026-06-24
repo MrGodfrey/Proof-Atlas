@@ -9,6 +9,15 @@ proof_choices:
   main.claim.partial_null_control: main.proof.partial_null_control
   main.claim.observability: main.proof.observability
   main.claim.free_decay: main.proof.free_decay
+  main.calculation.lr_product_estimate: main.proof.lr_product_estimate
+  main.estimate.lr_induction_product: main.proof.lr_induction_product
+  main.calculation.lr_exponent_identities: main.proof.lr_exponent_identities
+  main.statement.lr_low_mode_cancellation: main.proof.lr_low_mode_cancellation
+  main.estimate.lr_control_estimate: main.proof.lr_control_estimate
+  main.construction.partial_control_duality: main.proof.partial_control_duality
+  main.estimate.observability_spectral_bound: main.proof.observability_spectral_bound
+  main.statement.partial_control_representation: main.proof.partial_control_representation
+  main.statement.partial_control_ito_duality: main.proof.partial_control_ito_duality
 boundaries:
   - source.boyer_2010a.claim.partial_discrete_lr
 representation:
@@ -18,7 +27,7 @@ representation:
   main.proof.lr_iteration: full
   main.setting.spectral_spaces: statement
   source.boyer_2010a.claim.partial_discrete_lr: statement
-  main.calculation.lr_product_estimate: statement
+  main.calculation.lr_product_estimate: full
   main.claim.free_decay: statement
   main.claim.observability: statement
   main.claim.partial_null_control: statement
@@ -27,7 +36,7 @@ representation:
   main.statement.lr_low_mode_cancellation: statement
   main.model.continuous_problem: statement
   main.setting.discrete_mesh: statement
-  main.setting.domain_and_coefficients: statement
+  main.setting.domain_and_coefficients: full
   main.setting.grid_operator: statement
   main.setting.probability_and_spaces: statement
   main.calculation.lr_exponent_identities: statement
@@ -36,9 +45,18 @@ representation:
   main.proof.free_decay: full
   main.proof.observability: full
   main.proof.partial_null_control: full
-  main.construction.partial_control_duality: statement
+  main.construction.partial_control_duality: full
   main.estimate.observability_spectral_bound: statement
   main.statement.partial_control_ito_duality: statement
   main.statement.partial_control_representation: statement
+  main.proof.lr_product_estimate: full
+  main.proof.lr_induction_product: full
+  main.proof.lr_exponent_identities: full
+  main.proof.lr_low_mode_cancellation: full
+  main.proof.lr_control_estimate: full
+  main.proof.partial_control_duality: full
+  main.proof.observability_spectral_bound: full
+  main.proof.partial_control_representation: full
+  main.proof.partial_control_ito_duality: full
 render:
   order: prerequisites_first

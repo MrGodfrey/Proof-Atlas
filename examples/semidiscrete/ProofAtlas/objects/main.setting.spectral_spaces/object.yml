@@ -1,8 +1,8 @@
 uid: obj_20260611_f006
 name: main.setting.spectral_spaces
 kind: math
-role: setting
-display_as: notation
+role: definition
+display_as: definition
 importance: background
 title: Discrete eigenfunctions and spectral projectors
 status: checked

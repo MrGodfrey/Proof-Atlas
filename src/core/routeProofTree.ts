@@ -33,9 +33,7 @@ export interface RouteProofTree {
   diagnostics: RouteDiagnostic[];
 }
 
-const TREE_SUPPORT_ROLES = new Set(["proof", "proof_fragment", "construction", "calculation"]);
-const CONTEXT_ROLES = new Set(["problem", "setting", "notation", "definition", "model", "assumption", "example", "counterexample"]);
-const CONTEXT_DISPLAYS = new Set(["statement", "estimate"]);
+const CONTEXT_ROLES = new Set(["problem", "setting", "notation", "definition", "assumption"]);
 
 function proofTreeObjectKey(path: string[], object: NormalizedObject): string {
   return [...path, object.name].join(">");
@@ -46,12 +44,11 @@ function diagnosticsForObject(diagnostics: RouteDiagnostic[], object: Normalized
 }
 
 function isTreeSupportObject(object: NormalizedObject): boolean {
-  return object.kind === "math" && TREE_SUPPORT_ROLES.has(object.role);
+  return object.kind === "math" && object.role === "proof";
 }
 
 function isContextObject(object: NormalizedObject): boolean {
   if (object.kind !== "math") return true;
-  if (CONTEXT_DISPLAYS.has(object.display_as)) return true;
   return CONTEXT_ROLES.has(object.role);
 }
 
@@ -82,7 +79,6 @@ function hardTreeDependencies(graph: NormalizedGraph, route: ResolvedRoute, obje
 export function deriveRouteProofTree(route: ResolvedRoute, graph: NormalizedGraph): RouteProofTree {
   const routeNodesByName = new Map(route.nodes.map((node) => [node.object.name, node]));
   const treeObjectNames = new Set<string>();
-  const expandedObjectNames = new Set<string>();
   const openObjectNames = new Set(
     route.nodes
       .filter((node) => node.inclusionClass === "open" || node.decision === "unresolved")
@@ -101,7 +97,7 @@ export function deriveRouteProofTree(route: ResolvedRoute, graph: NormalizedGrap
     const diagnostics = diagnosticsForObject(route.diagnostics, object);
     const boundary = routeNode?.decision === "boundary" || route.boundaries.includes(object.name);
     const open = routeNode?.decision === "unresolved" || openObjectNames.has(object.name);
-    const shared = role !== "target" && expandedObjectNames.has(object.name);
+    const shared = role !== "target" && path.includes(object.name);
     const nodeRole: ProofTreeNodeRole = shared
       ? "shared_reference"
       : boundary
@@ -114,7 +110,6 @@ export function deriveRouteProofTree(route: ResolvedRoute, graph: NormalizedGrap
       return { id, object, routeNode, role: nodeRole, depth, children: [], diagnostics };
     }
 
-    expandedObjectNames.add(object.name);
     const children: ProofTreeNode[] = [];
     if (isProofObligationObject(object)) {
       const selectedProofName = route.selectedProofs[object.name];

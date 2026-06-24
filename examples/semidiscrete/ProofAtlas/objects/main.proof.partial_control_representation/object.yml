@@ -1,0 +1,20 @@
+uid: obj_20260624_pcrpr
+name: main.proof.partial_control_representation
+kind: math
+role: proof
+display_as: proof
+importance: supporting
+title: Proof of the partial-control representation identity
+status: needs_check
+body:
+  - proof.md
+summary: Reads the Riesz representative from the duality construction as an adapted low-frequency control.
+edges:
+  proves:
+    - target: main.statement.partial_control_representation
+  uses:
+    - target: main.construction.partial_control_duality
+    - target: main.model.backward_adjoint_system
+    - target: main.setting.spectral_spaces
+  cites:
+    - target: source.lue_zhang_2021

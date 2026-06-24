@@ -7,6 +7,10 @@ profile: proof
 proof_choices:
   main.claim.partial_null_control: main.proof.partial_null_control
   main.claim.observability: main.proof.observability
+  main.construction.partial_control_duality: main.proof.partial_control_duality
+  main.estimate.observability_spectral_bound: main.proof.observability_spectral_bound
+  main.statement.partial_control_representation: main.proof.partial_control_representation
+  main.statement.partial_control_ito_duality: main.proof.partial_control_ito_duality
 boundaries: []
 representation:
   main.claim.partial_null_control: full
@@ -14,16 +18,20 @@ representation:
   main.proof.partial_null_control: full
   main.setting.spectral_spaces: statement
   main.claim.observability: statement
-  main.construction.partial_control_duality: statement
+  main.construction.partial_control_duality: full
   main.statement.partial_control_ito_duality: statement
   main.statement.partial_control_representation: statement
   main.model.backward_adjoint_system: statement
   main.setting.discrete_mesh: statement
-  main.setting.domain_and_coefficients: statement
+  main.setting.domain_and_coefficients: full
   main.setting.grid_operator: statement
   main.setting.probability_and_spaces: statement
   main.proof.observability: full
   main.estimate.observability_spectral_bound: statement
+  main.proof.partial_control_duality: full
+  main.proof.observability_spectral_bound: full
+  main.proof.partial_control_representation: full
+  main.proof.partial_control_ito_duality: full
   source.boyer_2010a.claim.partial_discrete_lr: statement
 render:
   order: prerequisites_first

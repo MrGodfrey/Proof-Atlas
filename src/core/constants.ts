@@ -21,15 +21,9 @@ export const DEFAULT_DISPLAY_AS: Record<ObjectKind, Partial<Record<ObjectRole, D
     setting: "setting",
     notation: "notation",
     definition: "definition",
-    model: "plain",
     assumption: "assumption",
     claim: "theorem",
-    proof: "proof",
-    proof_fragment: "proof_fragment",
-    construction: "construction",
-    calculation: "calculation",
-    example: "example",
-    counterexample: "counterexample"
+    proof: "proof"
   },
   issue: {
     gap: "gap",
@@ -80,7 +74,7 @@ export function defaultDisplayAs(kind: ObjectKind, role: ObjectRole): DisplayAs 
 
 export function defaultBodyFile(kind: ObjectKind, role: ObjectRole): string {
   if (kind === "math" && role === "claim") return "statement.md";
-  if (kind === "math" && (role === "proof" || role === "proof_fragment")) return "proof.md";
+  if (kind === "math" && role === "proof") return "proof.md";
   if (kind === "issue") return "note.md";
   if (kind === "note") return "note.md";
   return "body.md";

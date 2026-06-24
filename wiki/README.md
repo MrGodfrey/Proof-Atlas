@@ -33,7 +33,6 @@ wiki/
     llm-suggestions.md
   design/
     philosophy.md
-    generated-view-ui-tradeoffs.md
   examples/
     semidiscrete-paper.md
     splitting-guidelines.md
@@ -64,8 +63,7 @@ wiki/
 
 1. [设计理念](design/philosophy.md)
 2. [核心概念与操作流程](guides/concepts-and-workflows.md)
-3. [Generated View UI 取舍](design/generated-view-ui-tradeoffs.md)
-4. [拆分粒度建议](examples/splitting-guidelines.md)
+3. [拆分粒度建议](examples/splitting-guidelines.md)
 
 发布到开源仓库：
 

@@ -1,0 +1,18 @@
+uid: obj_20260624_lmcpr
+name: main.proof.lr_low_mode_cancellation
+kind: math
+role: proof
+display_as: proof
+importance: supporting
+title: Proof of low-mode cancellation
+status: needs_check
+body:
+  - proof.md
+summary: Applies partial null controllability on the Lebeau-Robbiano subinterval to cancel the projection onto E_j.
+edges:
+  proves:
+    - target: main.statement.lr_low_mode_cancellation
+  uses:
+    - target: main.claim.partial_null_control
+    - target: main.construction.lr_time_grid
+    - target: main.setting.spectral_spaces

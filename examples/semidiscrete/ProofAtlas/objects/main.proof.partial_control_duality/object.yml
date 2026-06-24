@@ -1,0 +1,20 @@
+uid: obj_20260624_pcdpr
+name: main.proof.partial_control_duality
+kind: math
+role: proof
+display_as: proof
+importance: supporting
+title: Proof of the partial-control duality construction
+status: needs_check
+body:
+  - proof.md
+summary: Uses observability, Hahn-Banach, and Riesz representation to construct the adapted low-frequency control.
+edges:
+  proves:
+    - target: main.construction.partial_control_duality
+  uses:
+    - target: main.claim.observability
+    - target: main.model.backward_adjoint_system
+    - target: main.setting.spectral_spaces
+  cites:
+    - target: source.lue_zhang_2021

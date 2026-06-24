@@ -1,6 +1,4 @@
-This object records the finite product obtained by iterating the one-step estimate in [[main.calculation.lr_product_estimate]]. The times $a_j,T_j$ are from [[main.construction.lr_time_grid]], the cutoff $j^{\mathcal{M}}$ is from [[main.setting.spectral_spaces]], and $y$ is the controlled state of [[main.model.forward_semidiscrete_system]].
-
-For all $j_0\leq j^{\mathcal{M}}$ and $h\leq h_2$, induction gives
+Let $a_j,T_j$ be [[main.construction.lr_time_grid]], let $j^{\mathcal{M}}$ be the cutoff from [[main.setting.spectral_spaces]], and let $y$ be the controlled state of [[main.model.forward_semidiscrete_system]]. For all $j_0\leq j^{\mathcal{M}}$ and $h\leq h_2$,
 
 $$
 \begin{aligned}

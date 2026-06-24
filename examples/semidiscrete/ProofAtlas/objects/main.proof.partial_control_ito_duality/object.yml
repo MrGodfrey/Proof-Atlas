@@ -1,0 +1,17 @@
+uid: obj_20260624_pcipr
+name: main.proof.partial_control_ito_duality
+kind: math
+role: proof
+display_as: proof
+importance: supporting
+title: Proof of the Ito duality identity
+status: needs_check
+body:
+  - proof.md
+summary: Applies Ito's formula to the product of the controlled forward state and the backward adjoint state.
+edges:
+  proves:
+    - target: main.statement.partial_control_ito_duality
+  uses:
+    - target: main.model.forward_semidiscrete_system
+    - target: main.model.backward_adjoint_system

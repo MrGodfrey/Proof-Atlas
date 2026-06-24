@@ -1,7 +1,7 @@
 uid: obj_20260611_f005
 name: main.setting.discrete_mesh
 kind: math
-role: setting
+role: definition
 display_as: definition
 importance: background
 title: Cartesian grid and dual mesh notation

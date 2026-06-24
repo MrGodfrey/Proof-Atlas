@@ -1,0 +1,18 @@
+uid: obj_20260624_lcepr
+name: main.proof.lr_control_estimate
+kind: math
+role: proof
+display_as: proof
+importance: supporting
+title: Proof of the subinterval control estimate
+status: needs_check
+body:
+  - proof.md
+summary: Specializes the partial null-control cost to one Lebeau-Robbiano subinterval.
+edges:
+  proves:
+    - target: main.estimate.lr_control_estimate
+  uses:
+    - target: main.claim.partial_null_control
+    - target: main.construction.lr_time_grid
+    - target: main.setting.spectral_spaces

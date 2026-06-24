@@ -31,8 +31,7 @@ const zhSidebar = [
     items: [
       { text: "半离散论文示例", link: "/examples/semidiscrete-paper" },
       { text: "拆分粒度建议", link: "/examples/splitting-guidelines" },
-      { text: "设计理念", link: "/design/philosophy" },
-      { text: "Generated View UI 取舍", link: "/design/generated-view-ui-tradeoffs" }
+      { text: "设计理念", link: "/design/philosophy" }
     ]
   }
 ];
@@ -67,8 +66,7 @@ const enSidebar = [
     items: [
       { text: "Semi-discrete Paper Example", link: "/en/examples/semidiscrete-paper" },
       { text: "Splitting Guidelines", link: "/en/examples/splitting-guidelines" },
-      { text: "Design Philosophy", link: "/en/design/philosophy" },
-      { text: "Generated View UI Tradeoffs", link: "/en/design/generated-view-ui-tradeoffs" }
+      { text: "Design Philosophy", link: "/en/design/philosophy" }
     ]
   }
 ];

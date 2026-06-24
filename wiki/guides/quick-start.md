@@ -34,6 +34,9 @@ http://localhost:3217
 npm run atlas -- dev examples/semidiscrete/ProofAtlas --port 3217
 ```
 
+Proof Atlas 当前是本地可信文件工作台。不要直接用它打开不可信来源的
+`ProofAtlas/` 项目；项目中的 Markdown、YAML 和引用文件应先按普通本地文件审查。
+
 ## 最近项目
 
 ```bash

@@ -33,7 +33,6 @@ wiki/en/
     llm-suggestions.md
   design/
     philosophy.md
-    generated-view-ui-tradeoffs.md
   examples/
     semidiscrete-paper.md
     splitting-guidelines.md
@@ -64,8 +63,7 @@ Product design:
 
 1. [Design philosophy](design/philosophy.md)
 2. [Concepts and workflows](guides/concepts-and-workflows.md)
-3. [Generated View UI tradeoffs](design/generated-view-ui-tradeoffs.md)
-4. [Splitting guidelines](examples/splitting-guidelines.md)
+3. [Splitting guidelines](examples/splitting-guidelines.md)
 
 Open source release:
 

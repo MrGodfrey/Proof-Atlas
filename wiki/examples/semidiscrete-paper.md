@@ -88,7 +88,7 @@ main.estimate.lr_induction_product
 main.calculation.lr_exponent_identities
 ```
 
-正文通过普通对象链接引用这些材料。前向/后向系统保持为 `role: model`；原文里的 equation number 只适合作为来源位置或对象内部本地编号，不作为 Proof Atlas 对象类型。
+正文通过普通对象链接引用这些材料。前向/后向系统现在表达为 `role: definition`；原文里的 equation number 只适合作为来源位置或对象内部本地编号，不作为 Proof Atlas 对象类型。
 
 ## 文献关系
 

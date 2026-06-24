@@ -84,7 +84,7 @@ main.estimate.lr_induction_product
 main.calculation.lr_exponent_identities
 ```
 
-Body text refers to these materials with normal object links. Forward/backward systems remain `role: model`; source-paper equation numbers belong in source locations or local labels, not in the Proof Atlas object type.
+Body text refers to these materials with normal object links. Forward/backward systems are now expressed as `role: definition`; source-paper equation numbers belong in source locations or local labels, not in the Proof Atlas object type.
 
 ## Literature Relationships
 

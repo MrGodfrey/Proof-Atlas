@@ -19,6 +19,7 @@ npm run atlas -- check --strict examples/semidiscrete
 - invalid `kind`
 - invalid `role`
 - invalid `display_as`
+- invalid `display_as` / `kind` / `role` combination, such as `role: assumption` displayed as `lemma`
 - invalid `importance`
 - invalid `status`
 - invalid `priority`
@@ -67,12 +68,12 @@ Warnings do not necessarily make ordinary graph build fail, but they appear in t
 - `embed_option_spacing`: `![[name]] {expanded}` has a space before `{expanded}`; write `![[name]]{expanded}`.
 - `status_kind_combo`: `kind` and `status` combination is not recommended.
 - `blocks_from_non_issue`: non-issue object has `blocks`.
-- `proves_shape`: non-proof / non-proof_fragment object has `proves`.
+- `proves_shape`: a non-proof object has `proves`, or `proves` does not point to a math claim.
 - `uses_points_to_proof`: `uses` points to a proof object; usually model through the proof's `proves` and `uses`.
 - `claim_uses_own_proof`: claim `uses` points to the proof of itself.
 - `claim_uses_dependency`: claim has proof-dependency-style `uses`; usually move it to the corresponding proof's `uses`.
 - `needs_confirmation`: route has multiple reasonable proof candidates; resolver used deterministic default but human confirmation is recommended.
-- `unsupported_proof_tree_target`: Generated View target is not a proof-obligation claim. The target must be `kind: math`, `role: claim`, and not displayed as `statement` or `estimate`.
+- `unsupported_proof_tree_target`: Generated View target is not a proof-obligation claim. The target must be `kind: math`, `role: claim`.
 - `citation_bibfile_deprecated`: object hand-wrote `citation.bibfile`; BibTeX file should be derived from `bib-registry.yml`.
 - `unverified_external_dependency`: proof hard-uses an unverified external result and needs source trust review.
 

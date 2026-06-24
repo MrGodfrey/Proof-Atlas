@@ -9,17 +9,18 @@ Code source of truth:
 - `src/core/types.ts`: `RouteProfile`, `RepresentationMode`, `RouteView`.
 - `src/core/graph.ts`: route YAML normalization and schema validation.
 - `src/core/proofObjects.ts`: proof-obligation claim eligibility.
-- `src/core/routeResolver.ts`: proof expansion, proof choice, boundary, representation floors, token estimates.
+- `src/core/routeResolver.ts`: proof expansion, proof choice, boundary, representation floors, and route status.
 - `src/core/routeProofTree.ts`: projection from resolved route to the web Proof Tree.
 - `src/core/contextExporter.ts`: materialization rules for Markdown / manifest / JSON export.
 
 Markdown export is the cloud-AI verification context: it materializes the
 selected route into a readable `.context.md` file for checking whether the
 included proof route establishes the target statement. It intentionally omits
-workflow status, citation trust, export diagnostics, schema/version metadata,
-hashes, and local integrity bookkeeping from the Markdown body. Those details
-remain available through the resolver, CLI diagnostics, JSON export, manifest
-export, and optional snapshots.
+full diagnostics, citation trust, schema/version metadata, hashes, and local
+integrity bookkeeping from the Markdown body. It does include one lightweight
+`Route status:` line so exported contexts remain interpretable away from the UI.
+Full details remain available through the resolver, CLI diagnostics, JSON
+export, manifest export, and optional snapshots.
 
 Current legal representation values are `full`, `statement`, `summary`, `reference`, and `omit`. Do not write `full_statement` or `full statement`.
 
@@ -102,13 +103,10 @@ A legal target must be a proof obligation:
 ```text
 kind: math
 role: claim
-display_as != statement
-display_as != estimate
 ```
 
 Theorems, lemmas, propositions, corollaries, conjectures, and plain claims can be roots. `proof`,
-`proof_fragment`, `construction`, `calculation`, `definition`, `setting`, `model`, `statement`,
-`estimate`, `problem`, `note`, and `issue` cannot be Generated View roots.
+`definition`, `setting`, `notation`, `assumption`, `problem`, `note`, and `issue` cannot be Generated View roots.
 
 If a `profile: proof` target is not a proof obligation, the resolver emits
 `unsupported_proof_tree_target`; the web UI shows diagnostics instead of falling back to a generic dependency view.
@@ -118,14 +116,14 @@ Proof Tree spine:
 ```text
 claim
   -> selected proof
-      -> hard uses: claim / construction / calculation / proof_fragment
+      -> hard uses: claim / proof
           -> if claim, selected proof recursively
           -> if boundary or external accepted claim, leaf
           -> if already expanded elsewhere, shared reference
 ```
 
-`setting`, `model`, `definition`, `notation`, `assumption`, `statement`, and `estimate`
-do not mix into the main tree. The web UI places them below the main tree in single-column context groups derived from incoming relation types, such as `Required Context`, `Used Statements and Estimates`, `Used Inputs`, and `Citation and Source Context`. The right-column relations still show the selected object's full outgoing and reverse edges.
+`setting`, `definition`, `notation`, and `assumption`
+do not mix into the main tree. The web UI places them below the main tree in single-column context groups derived from incoming relation types, such as `Required Context`, `Used Inputs`, and `Citation and Source Context`. The right-column relations still show the selected object's full outgoing and reverse edges.
 
 ## Proof Choice
 
@@ -183,10 +181,18 @@ boundaries:
   - source.boyer_2010a.claim.partial_discrete_lr
 ```
 
-Boundary objects still appear in the route node list and Markdown export:
+Only boundaries actually encountered from the target appear in the route node list. An explicit boundary that is not encountered produces an `unused_boundary` warning and is not written back by `route --save`.
+
+Resolved boundaries are classified as:
+
+- `Accepted Inputs`: external or imported math claim boundaries.
+- `Context Cuts`: internal settings, definitions, notation, assumptions, proofs, or other support boundaries.
+
+Markdown export labels these cases separately:
 
 ```text
-Boundary input: this statement is included without its proof.
+Accepted input; proof not included.
+Context cut; dependencies are not expanded in this context.
 ```
 
 When a boundary cites a bibliography entry, Markdown export includes a compact
@@ -207,11 +213,11 @@ omit
 
 | representation | Exported content | When to use | Example |
 |---|---|---|---|
-| `full` | All Markdown files listed in `body`. | Target, selected proof, or construction/calculation whose full reasoning must be checked. | `main.proof.lr_iteration: full`. |
+| `full` | All Markdown files listed in `body`. | Target, selected proof, or proof/definition object whose full reasoning must be checked. | `main.proof.lr_iteration: full`. |
 | `statement` | Statement-level source only. | Hard dependency where the statement is needed but not its proof. | `main.claim.partial_null_control: statement`. |
 | `summary` | Only `object.yml.summary`; empty if missing. | Soft context where AI only needs the gist. | Background literature or related objects. |
 | `reference` | Metadata only, no body. | Citation/provenance or objects that only need to be locatable by name. | `source.boyer_2010: reference`. |
-| `omit` | No body; token estimate 0. | Only for soft context explicitly excluded from export. | Remove a large side note from context. |
+| `omit` | No body. | Only for soft context explicitly excluded from export. | Remove a large side note from context. |
 
 `statement` is not spelled "full statement". YAML must use:
 
@@ -244,7 +250,7 @@ Default suggestion rules:
 | soft dependency has `summary` | `summary` |
 | soft dependency has no `summary` | `reference` |
 | hard claim dependency | `statement` |
-| hard proof / proof_fragment dependency | `full` |
+| hard proof dependency | `full` |
 | external/imported hard object | `statement` |
 | other hard object has statement source | `statement` |
 | other hard object has no statement source | `full` |
@@ -276,8 +282,8 @@ If route resolution reports `representation_below_floor` or `hard_dependency_omi
 Statement materialization rules:
 
 - Any object with `statement.md` uses `statement.md` for `statement`.
-- `setting` / `notation` / `definition` / `model` / `construction` / `calculation` can use the first body file as `statement` when `statement.md` is absent.
-- Other objects, including `claim`, `problem`, `assumption`, `proof`, `proof_fragment`, and `note`, cannot reliably materialize `statement` without `statement.md`; export records diagnostics and tries to fall back to summary.
+- `setting` / `notation` / `definition` can use the first body file as `statement` when `statement.md` is absent.
+- Other objects, including `claim`, `problem`, `assumption`, `proof`, and `note`, cannot reliably materialize `statement` without `statement.md`; export records diagnostics and tries to fall back to summary.
 - In proof routes, selected proofs usually use `full`.
 
 ## CLI: Resolve Route
@@ -324,7 +330,7 @@ npm run atlas -- route main.claim.null_controllability \
   --save views/null_controllability.route.yml
 ```
 
-`npm run atlas -- route` output includes closure, cloud context sufficiency, object count, token estimate, selected proofs, boundaries, witness paths, and marginal costs.
+`npm run atlas -- route` output includes route status, object count, selected proofs, actually encountered boundaries, open blockers, diagnostics, and witness paths. Route status summarizes structure, context, proof choice, verification counts, accepted inputs, context cuts, and open blockers.
 
 ## Machine Editing Rules
 
@@ -337,9 +343,8 @@ Local AI or scripts that edit routes should follow these rules:
 5. `profile` can only be `proof`.
 6. `representation` can only be `full`, `statement`, `summary`, `reference`, or `omit`.
 7. Do not set a hard dependency to `omit`.
-8. `proof_choices` can only select `role: proof` or `role: proof_fragment` objects that actually `proves` the corresponding claim.
-9. To reduce tokens, downgrade soft context from `summary` to `reference` before compressing hard dependencies.
-10. After edits, run `npm run atlas -- check --strict <paper-root-or-ProofAtlas-root>`.
+8. `proof_choices` can only select `role: proof` objects that actually `proves` the corresponding claim.
+9. After edits, run `npm run atlas -- check --strict <paper-root-or-ProofAtlas-root>`.
 
 ## CLI: Export Context
 
@@ -410,9 +415,10 @@ If the tool repository or project directory moved, restart the dev server or reo
 
 Markdown export:
 
-- Outputs Proof Route, Accepted Inputs, Target, Definitions and Settings, Statements / Estimates / Calculations, Supporting Claims, Proofs, Issues, Citation / Source Notes, and References.
+- Emits one lightweight `Route status` line near the top, but not full diagnostics, certificates, or large YAML metadata blocks.
+- Outputs Proof Route, Accepted Inputs, Context Cuts when present, Target, Definitions and Settings, Supporting Claims, Proofs, Issues, Citation / Source Notes, and References.
 - Keeps Proof Route as a short proof tree covering the target, selected proof, main supporting claims, and proof components. Full dependency edges remain in JSON / manifest export.
-- Derives Accepted Inputs from resolved boundary nodes, including explicit `boundaries` and implicit boundaries created when an external claim is included without expanding a proof.
+- Derives Accepted Inputs from resolved `decision: boundary` nodes whose object is an external/imported math claim, including explicit `boundaries` and implicit boundaries created when an external claim is included without expanding a proof. Internal boundaries are shown as Context Cuts.
 - Each object section keeps only the title, an `Object:` line, and body text by default; it does not emit `uid`, `status`, `trust`, `content_included`, or a YAML metadata block.
 - Rewrites included `[[object.name]]` / `![[object.name]]` links into Markdown anchor links.
 - Keeps links that point to the current object as plain display text instead of generating self-links.

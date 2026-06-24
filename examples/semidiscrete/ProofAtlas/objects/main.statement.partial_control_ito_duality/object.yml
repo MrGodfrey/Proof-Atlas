@@ -2,7 +2,7 @@ uid: obj_20260611_f021
 name: main.statement.partial_control_ito_duality
 kind: math
 role: claim
-display_as: statement
+display_as: lemma
 importance: supporting
 title: Ito duality identity for the forward and adjoint systems
 status: needs_check

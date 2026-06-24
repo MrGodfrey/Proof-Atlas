@@ -1,6 +1,4 @@
-This object records the Ito duality identity used in [[main.proof.partial_null_control]]. The forward state $y$ solves [[main.model.forward_semidiscrete_system]], the adjoint pair $(z,Z)$ solves [[main.model.backward_adjoint_system]], and $\eta$ is the terminal datum for the adjoint equation.
-
-For these forward and adjoint states, Ito's formula gives
+Let $y$ solve [[main.model.forward_semidiscrete_system]], let the adjoint pair $(z,Z)$ solve [[main.model.backward_adjoint_system]], and let $\eta$ be the terminal datum for the adjoint equation. Then
 
 $$
 \begin{aligned}

@@ -1,0 +1,21 @@
+uid: obj_20260624_lippr
+name: main.proof.lr_induction_product
+kind: math
+role: proof
+display_as: proof
+importance: supporting
+title: Proof of the induction product estimate
+status: needs_check
+body:
+  - proof.md
+summary: Iterates the controlled/free one-step estimate over the Lebeau-Robbiano grid.
+edges:
+  proves:
+    - target: main.estimate.lr_induction_product
+  uses:
+    - target: main.construction.lr_time_grid
+    - target: main.statement.lr_low_mode_cancellation
+    - target: main.estimate.lr_control_estimate
+    - target: main.claim.partial_null_control
+    - target: main.claim.free_decay
+    - target: main.setting.spectral_spaces

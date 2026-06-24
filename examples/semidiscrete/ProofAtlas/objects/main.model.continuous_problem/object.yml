@@ -1,7 +1,8 @@
 uid: obj_20260611_f004
 name: main.model.continuous_problem
 kind: math
-role: model
+role: definition
+display_as: definition
 importance: background
 title: Continuous stochastic parabolic control problem
 status: checked

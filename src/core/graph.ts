@@ -30,6 +30,7 @@ import type {
   BodyFile,
   BibRegistryEntry,
   BibTrust,
+  DisplayAs,
   EdgeRef,
   EdgeMap,
   EdgeType,
@@ -79,6 +80,40 @@ function asStringArray(value: unknown): string[] | undefined {
 
 function includesReadonly<T extends string>(values: readonly T[], value: unknown): value is T {
   return typeof value === "string" && (values as readonly string[]).includes(value);
+}
+
+const DISPLAY_AS_BY_KIND_ROLE: Record<ObjectKind, Partial<Record<ObjectRole, readonly DisplayAs[]>>> = {
+  math: {
+    problem: ["problem"],
+    setting: ["setting"],
+    notation: ["notation"],
+    definition: ["definition"],
+    assumption: ["assumption"],
+    claim: ["plain", "theorem", "lemma", "proposition", "corollary", "conjecture"],
+    proof: ["proof"]
+  },
+  issue: {
+    gap: ["gap"],
+    question: ["question"],
+    todo: ["todo"],
+    risk: ["warning"],
+    possible_error: ["warning"],
+    review_concern: ["warning"],
+    missing_reference: ["warning"]
+  },
+  note: {
+    literature: ["literature_note"],
+    ai_note: ["ai_note"],
+    meeting: ["meeting_note"],
+    review_note: ["review_note"],
+    historical: ["note"],
+    scratch: ["note"],
+    external_context: ["note"]
+  }
+};
+
+function allowedDisplayAs(kind: ObjectKind, role: ObjectRole): readonly DisplayAs[] {
+  return DISPLAY_AS_BY_KIND_ROLE[kind][role] ?? [defaultDisplayAs(kind, role)];
 }
 
 function addUnique(map: Partial<Record<string, string[]>>, key: string, value: string): void {
@@ -868,6 +903,18 @@ function normalizeObject(
       }));
     }
   }
+  const allowedDisplays = allowedDisplayAs(kind, role);
+  if (!allowedDisplays.includes(display_as)) {
+    problems.push(problem({
+      severity: "error",
+      code: "invalid_display_role_combo",
+      message: `display_as ${display_as} is not valid for ${kind}.${role}; allowed: ${allowedDisplays.join(", ")}.`,
+      path: objectPath,
+      objectUid: uid,
+      objectName: name,
+      strict: true
+    }));
+  }
 
   let importance = DEFAULT_IMPORTANCE;
   if (raw.importance !== undefined) {
@@ -1541,7 +1588,7 @@ function normalizeRouteView(raw: unknown, viewPath: string, graph: NormalizedGra
     graph.problems.push(problem({
       severity: "error",
       code: "unsupported_proof_tree_target",
-      message: "route target must be a math claim that is not displayed as statement or estimate.",
+      message: "route target must be a math claim.",
       path: viewPath,
       viewPath,
       target: resolvedTarget.name,
@@ -2003,11 +2050,11 @@ function lintGraph(graph: NormalizedGraph): void {
     }
     for (const targetName of edgeTargets(object.edges.proves)) {
       const target = graph.objectsByName[targetName];
-      if (!(object.kind === "math" && ["proof", "proof_fragment"].includes(object.role)) || !(target?.kind === "math" && target.role === "claim")) {
+      if (!(object.kind === "math" && object.role === "proof") || !(target?.kind === "math" && target.role === "claim")) {
         graph.problems.push(problem({
           severity: "warning",
           code: "proves_shape",
-          message: "proves edges should go from math proof/proof_fragment objects to math claim objects.",
+          message: "proves edges should go from math proof objects to math claim objects.",
           path: object.objectPath,
           objectUid: object.uid,
           objectName: object.name,
@@ -2018,7 +2065,7 @@ function lintGraph(graph: NormalizedGraph): void {
     }
     for (const targetName of edgeTargets(object.edges.uses)) {
       const target = graph.objectsByName[targetName];
-      if (target && ["proof", "proof_fragment"].includes(target.role)) {
+      if (target && target.role === "proof" && edgeTargets(target.edges.proves).length > 0) {
         graph.problems.push(problem({
           severity: "warning",
           code: "uses_points_to_proof",
@@ -2072,7 +2119,7 @@ function lintGraph(graph: NormalizedGraph): void {
         }
       }
     }
-    if (object.kind === "math" && ["proof", "proof_fragment"].includes(object.role)) {
+    if (object.kind === "math" && object.role === "proof") {
       for (const targetName of hardEdgeTargets(object.edges.uses)) {
         const target = graph.objectsByName[targetName];
         if (!target?.name.startsWith("source.")) continue;

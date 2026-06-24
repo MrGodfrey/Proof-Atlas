@@ -93,7 +93,7 @@ Below the page title, the UI shows:
 target object · proof tree · route status
 ```
 
-This reports the target and whether the route is closed. The compact summary strip also shows target status, boundary count, proof-choice count, diagnostic count, and token estimate.
+This reports the target and route status. The compact summary strip shows structure, context, proof-choice mode, verification counts, accepted inputs, context cuts, and open blockers.
 
 Generated View has two copy buttons:
 
@@ -127,19 +127,20 @@ The copied command includes local absolute paths such as your username, reposito
 If the route has open nodes or diagnostics, the banner and diagnostic items appear at the top of Generated View.
 Object names and diagnostics that resolve to an object are clickable; clicking only selects the related object in the right column so you can inspect `Route inclusion`, and it does not modify the route file.
 
-Generated View has two read-only tabs:
+Generated View read-only tabs are ordered by reading priority:
 
 | Tab | Purpose |
 |---|---|
-| `Proof Tree` | Default view. It starts with the target claim and selected proof, then expands proof direct uses one layer at a time. |
-| `Narrative` | Shows note body text from notes `related_to` the target or selected proof; it shows an empty state if no note exists. |
+| `Proof Tree` | Default view. It starts with the target claim and selected proof, then lets the reader expand proof direct uses. |
+| `Narrative` | Shows note body text only when the note is related to objects actually included in the current proof route. It does not pull in every note merely related to the target. |
+| `Proof Choices` | Appears only when a claim has replaceable proof alternatives. It shows the selected proof and the available replacement proofs; claims without alternatives do not add noise to this tab. |
 
 Proof Tree controls:
 
 | Control | Purpose |
 |---|---|
 | Disclosure arrow | Expand or collapse only that tree node without changing the right-column selection. |
-| `Expand main path` | Expand the proof-tree main path. |
+| `Expand main path` | Traverse the displayed tree order deeply and expand the main path. If the same object was already expanded earlier, later duplicate occurrences stay collapsed so one object is not auto-expanded twice. |
 | `Collapse all` | Collapse the whole proof tree. |
 | Single-click node body | Update the right column and show why the route included that object. |
 | Double-click node body | Open the full object page. |
@@ -205,9 +206,8 @@ When a node is selected in Generated View, the right column also shows `Route in
 | `representation` | Whether export uses `full`, `statement`, `summary`, `reference`, or `omit`. |
 | `hardness` | Whether this is a hard dependency or soft/background context. |
 | `depth` | Dependency depth from the route target. |
-| `tokens` | Token estimate for the current representation. |
+| `boundary type` | Whether a boundary is an external/imported accepted input or an internal context cut. |
 | `witness path` | A dependency path explaining why this object was included. |
-| `marginal cost` | Extra or saved tokens when changing representation. |
 | `diagnostics` | Route diagnostics related to the object. |
 
 These fields explain the route. They are not editing controls.

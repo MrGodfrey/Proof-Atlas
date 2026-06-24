@@ -1,7 +1,8 @@
 uid: obj_20260611_a104
 name: main.model.backward_adjoint_system
 kind: math
-role: model
+role: definition
+display_as: definition
 importance: background
 title: Backward semi-discrete stochastic adjoint system
 status: checked

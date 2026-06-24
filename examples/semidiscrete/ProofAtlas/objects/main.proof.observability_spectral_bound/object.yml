@@ -1,0 +1,18 @@
+uid: obj_20260624_osbpr
+name: main.proof.observability_spectral_bound
+kind: math
+role: proof
+display_as: proof
+importance: supporting
+title: Proof of the pointwise spectral bound
+status: needs_check
+body:
+  - proof.md
+summary: Applies the partial discrete Lebeau-Robbiano inequality to the adjoint low-frequency expansion.
+edges:
+  proves:
+    - target: main.estimate.observability_spectral_bound
+  uses:
+    - target: source.boyer_2010a.claim.partial_discrete_lr
+    - target: main.model.backward_adjoint_system
+    - target: main.setting.spectral_spaces

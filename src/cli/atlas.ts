@@ -17,7 +17,7 @@ import { pathExists, listFilesRecursive } from "../core/pathUtils";
 import { hasCheckErrors } from "../core/problems";
 import { expandHome, ProjectError, resolveAtlasProject } from "../core/project";
 import { formatLocalReference } from "../core/reference";
-import { resolveRoute, type ResolvedRoute } from "../core/routeResolver";
+import { resolveRoute, routeStatusLine, type ResolvedRoute } from "../core/routeResolver";
 import { DEFAULT_DEV_SERVER_PORT } from "../core/serverConfig";
 import { applySuggestionSet, createSuggestionSet, readSuggestionSet } from "../core/suggestions";
 import {
@@ -404,30 +404,11 @@ async function loadRouteRecipe(graph: Awaited<ReturnType<typeof buildGraph>>, ro
   return loaded.route;
 }
 
-function formatMarginalCost(node: ResolvedRoute["nodes"][number]): string {
-  const parts: string[] = [];
-  if (node.marginalCost.downgrade_to_statement !== undefined) {
-    parts.push(`to statement ${node.marginalCost.downgrade_to_statement >= 0 ? "saves" : "adds"} ${Math.abs(node.marginalCost.downgrade_to_statement)}`);
-  }
-  if (node.marginalCost.downgrade_to_summary !== undefined) {
-    parts.push(`to summary ${node.marginalCost.downgrade_to_summary >= 0 ? "saves" : "adds"} ${Math.abs(node.marginalCost.downgrade_to_summary)}`);
-  }
-  if (node.marginalCost.downgrade_to_reference !== undefined) {
-    parts.push(`to reference ${node.marginalCost.downgrade_to_reference >= 0 ? "saves" : "adds"} ${Math.abs(node.marginalCost.downgrade_to_reference)}`);
-  }
-  if (node.marginalCost.upgrade_to_full !== undefined) {
-    parts.push(`to full adds ${node.marginalCost.upgrade_to_full}`);
-  }
-  return parts.join("; ");
-}
-
 function printRouteSummary(route: ResolvedRoute, graph: Awaited<ReturnType<typeof buildGraph>>): void {
   console.log(`Route target: ${route.target.name}`);
   console.log(`Profile: ${route.profile}`);
-  console.log(`Closed: ${route.closed ? "yes" : "no"}`);
-  console.log(`Cloud context sufficient: ${route.contentSufficient ? "yes" : "no"}`);
+  console.log(`Route status: ${routeStatusLine(route.status)}`);
   console.log(`Objects: ${route.nodes.length}`);
-  console.log(`Estimated tokens: ${route.totalTokens}`);
   if (Object.keys(route.selectedProofs).length) {
     console.log("Selected proofs:");
     for (const [claim, proof] of Object.entries(route.selectedProofs)) console.log(`  ${claim} -> ${proof}`);
@@ -451,15 +432,12 @@ function printRouteSummary(route: ResolvedRoute, graph: Awaited<ReturnType<typeo
   }
   console.log("Nodes:");
   for (const node of route.nodes) {
-    const tokens = node.tokenEstimates;
-    console.log(`  ${node.object.name} ${node.decision} ${node.representation} depth=${node.depth} hard=${node.hardness} tokens=${node.marginalCost.current} [full=${tokens.full}, statement=${tokens.statement}, summary=${tokens.summary}, reference=${tokens.reference}]`);
+    console.log(`  ${node.object.name} ${node.decision} ${node.representation} depth=${node.depth} hard=${node.hardness}`);
     if (node.witnessPaths.length) {
       console.log(`    why: ${node.witnessPaths[0].join(" -> ")}`);
       for (const witness of node.witnessPaths.slice(1, 3)) console.log(`    also: ${witness.join(" -> ")}`);
       if (node.witnessPaths.length > 3) console.log(`    also: ${node.witnessPaths.length - 3} more witness path(s)`);
     }
-    const marginal = formatMarginalCost(node);
-    if (marginal) console.log(`    marginal: ${marginal}`);
   }
 }
 

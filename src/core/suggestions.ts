@@ -77,8 +77,8 @@ function existingDependencyTargets(object: NormalizedObject): Set<string> {
 
 function suggestedEdgeType(source: NormalizedObject, target: NormalizedObject): "requires" | "uses" | undefined {
   if (source.kind !== "math" || target.kind !== "math") return undefined;
-  if (target.role === "proof" || target.role === "proof_fragment") return undefined;
-  if (source.role === "proof" || source.role === "proof_fragment") return "uses";
+  if (target.role === "proof") return undefined;
+  if (source.role === "proof") return "uses";
   return "requires";
 }
 

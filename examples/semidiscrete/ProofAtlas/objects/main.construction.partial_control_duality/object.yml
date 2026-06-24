@@ -1,8 +1,8 @@
 uid: obj_20260611_f007
 name: main.construction.partial_control_duality
 kind: math
-role: construction
-display_as: construction
+role: claim
+display_as: lemma
 importance: supporting
 title: Duality construction of the partial control
 status: needs_check
@@ -16,6 +16,5 @@ edges:
     - target: main.claim.observability
     - target: main.model.backward_adjoint_system
     - target: main.setting.spectral_spaces
-    - target: main.statement.partial_control_representation
   cites:
     - target: source.lue_zhang_2021

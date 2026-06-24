@@ -10,7 +10,7 @@ import { linearizeRoute } from "../src/core/routeLinearizer";
 import { deriveRouteProofTree } from "../src/core/routeProofTree";
 import { resolveRoute } from "../src/core/routeResolver";
 import { applySuggestionSet, createSuggestionSet } from "../src/core/suggestions";
-import { writeYamlFile } from "../src/core/yaml";
+import { readYamlFile, writeYamlFile } from "../src/core/yaml";
 import { baseClaim, tempDir, writeTestProject } from "./helpers";
 
 describe("generated routes", () => {
@@ -55,7 +55,16 @@ describe("generated routes", () => {
       "main.claim.null_controllability": "main.proof.lr_iteration",
       "main.claim.partial_null_control": "main.proof.partial_null_control",
       "main.claim.observability": "main.proof.observability",
-      "main.claim.free_decay": "main.proof.free_decay"
+      "main.claim.free_decay": "main.proof.free_decay",
+      "main.calculation.lr_product_estimate": "main.proof.lr_product_estimate",
+      "main.estimate.lr_induction_product": "main.proof.lr_induction_product",
+      "main.calculation.lr_exponent_identities": "main.proof.lr_exponent_identities",
+      "main.statement.lr_low_mode_cancellation": "main.proof.lr_low_mode_cancellation",
+      "main.estimate.lr_control_estimate": "main.proof.lr_control_estimate",
+      "main.construction.partial_control_duality": "main.proof.partial_control_duality",
+      "main.estimate.observability_spectral_bound": "main.proof.observability_spectral_bound",
+      "main.statement.partial_control_representation": "main.proof.partial_control_representation",
+      "main.statement.partial_control_ito_duality": "main.proof.partial_control_ito_duality"
     });
     const externalSpectralInput = route.nodes.find((node) => node.object.name === "source.boyer_2010a.claim.partial_discrete_lr");
     expect(externalSpectralInput).toBeTruthy();
@@ -64,13 +73,23 @@ describe("generated routes", () => {
     expect(externalSpectralInput?.inclusionClass).toBe("boundary");
     expect(route.nodes.find((node) => node.object.name === "main.proof.lr_iteration")?.inclusionClass).toBe("spine");
     expect(route.nodes.find((node) => node.object.name === "main.model.forward_semidiscrete_system")?.inclusionClass).toBe("vocabulary");
-    expect(route.nodes.filter((node) => node.inclusionClass === "spine")).toHaveLength(11);
+    expect(route.nodes.filter((node) => node.inclusionClass === "spine")).toHaveLength(26);
+    expect(route.status).toMatchObject({
+      structure: "closed",
+      context: "sufficient",
+      proofChoice: { mode: "explicit" },
+      acceptedInputs: ["source.boyer_2010a.claim.partial_discrete_lr"],
+      contextCuts: [],
+      openBlockers: [],
+      exportReadiness: "ready"
+    });
 
     const tree = deriveRouteProofTree(route, graph);
     expect(tree.root.object.name).toBe("main.claim.null_controllability");
     expect(tree.defaultExpandedNodeIds).toEqual([tree.root.id]);
     expect(tree.root.children.map((node) => node.object.name)).toEqual(["main.proof.lr_iteration"]);
     expect(tree.root.children[0].children.map((node) => node.object.name)).toContain("main.claim.partial_null_control");
+    expect(tree.root.children[0].children.map((node) => node.object.name)).toContain("main.estimate.lr_control_estimate");
     expect(tree.foundationNodes.map((node) => node.object.name)).toContain("main.model.forward_semidiscrete_system");
   });
 
@@ -90,7 +109,8 @@ describe("generated routes", () => {
     expect(result.content).toContain("## Accepted Inputs");
     expect(result.content).toContain(`- \`${acceptedInput}\``);
     expect(result.content).toContain("> Accepted input; proof not included.");
-    expect(result.content).toContain("## Statements, Estimates, and Calculations");
+    expect(result.content).toContain("Route status: structure closed; context sufficient;");
+    expect(result.content).toContain("## Proofs");
     expect(result.content).toContain("## References");
     expect(result.content).toContain("[Boyer2010a]");
     expect(result.content).toContain("Object: `main.claim.partial_null_control`");
@@ -98,7 +118,7 @@ describe("generated routes", () => {
     expect(result.content).not.toContain("```yaml");
     expect(result.content).not.toContain("uid: obj_");
     expect(result.content).not.toContain("content_included:");
-    expect(result.content).not.toContain("status:");
+    expect(result.content).not.toContain("\nstatus:");
     expect(result.content).not.toContain("provenance:");
     expect(result.content).not.toContain("citation_trust:");
     expect(result.content).not.toContain("Dependency edges included in this context");
@@ -255,17 +275,36 @@ describe("generated routes", () => {
     expect(route.nodes.map((node) => node.object.name)).toEqual(["main.proof.lr_iteration"]);
   });
 
-  it("uses the shared proof-obligation predicate for claim display eligibility", async () => {
+  it("uses the shared proof-obligation predicate for math claims regardless display label", async () => {
     const graph = await buildGraph("examples/semidiscrete/ProofAtlas");
     expect(isProofObligationObject(graph.objectsByName["main.claim.null_controllability"])).toBe(true);
-    expect(isProofObligationObject(graph.objectsByName["main.statement.partial_control_representation"])).toBe(false);
-    expect(isProofObligationObject(graph.objectsByName["main.estimate.observability_spectral_bound"])).toBe(false);
+    expect(isProofObligationObject(graph.objectsByName["main.statement.partial_control_representation"])).toBe(true);
+    expect(isProofObligationObject(graph.objectsByName["main.estimate.observability_spectral_bound"])).toBe(true);
 
-    const statementRoute = resolveRoute(graph, {
-      target: "main.statement.partial_control_representation",
+    const root = await tempDir("pa-claim-display-obligation-");
+    const project = await writeTestProject(root, [
+      {
+        ...baseClaim("main.claim.plain", "obj_20260611_disp"),
+        object: {
+          uid: "obj_20260611_disp",
+          name: "main.claim.plain",
+          kind: "math",
+          role: "claim",
+          display_as: "plain",
+          title: "Plain Claim",
+          body: ["statement.md"]
+        }
+      }
+    ]);
+    const displayGraph = await buildGraph(project);
+    const plainClaim = displayGraph.objectsByName["main.claim.plain"];
+    expect(isProofObligationObject(plainClaim)).toBe(true);
+    const route = resolveRoute(displayGraph, {
+      target: "main.claim.plain",
       profile: "proof"
     });
-    expect(statementRoute.diagnostics.map((item) => item.code)).toContain("unsupported_proof_tree_target");
+    expect(route.diagnostics.map((item) => item.code)).toContain("unresolved_claim");
+    expect(route.diagnostics.map((item) => item.code)).not.toContain("unsupported_proof_tree_target");
   });
 
   it("deduplicates route diagnostics reached through multiple witness paths", async () => {
@@ -376,7 +415,7 @@ describe("generated routes", () => {
     expect(route.nodes.find((node) => node.object.name === "main.claim.leaf")?.witnessPaths).toHaveLength(2);
   });
 
-  it("marks the second proof-tree occurrence of a shared dependency as a shared reference", async () => {
+  it("expands repeated proof-tree claim occurrences outside the current ancestor path", async () => {
     const root = await tempDir("pa-route-shared-tree-");
     const project = await writeTestProject(root, [
       {
@@ -498,15 +537,16 @@ describe("generated routes", () => {
       }
     });
     const tree = deriveRouteProofTree(route, graph);
-    const occurrences: Array<{ name: string; role: string }> = [];
+    const occurrences: Array<{ name: string; role: string; children: string[] }> = [];
     const visit = (node: typeof tree.root) => {
-      occurrences.push({ name: node.object.name, role: node.role });
+      occurrences.push({ name: node.object.name, role: node.role, children: node.children.map((child) => child.object.name) });
       node.children.forEach(visit);
     };
     visit(tree.root);
 
     const leafOccurrences = occurrences.filter((item) => item.name === "main.claim.leaf");
-    expect(leafOccurrences.map((item) => item.role)).toEqual(["support", "shared_reference"]);
+    expect(leafOccurrences.map((item) => item.role)).toEqual(["support", "support"]);
+    expect(leafOccurrences.map((item) => item.children)).toEqual([["main.proof.leaf"], ["main.proof.leaf"]]);
   });
 
   it("creates snapshots with materialized markdown and route identity", async () => {
@@ -595,7 +635,182 @@ describe("generated routes", () => {
     expect(settingNames).toEqual(["main.setting.b", "main.setting.a"]);
   });
 
-  it("prints route witness paths and marginal token costs", async () => {
+  it("rejects target and selected-proof boundaries", async () => {
+    const root = await tempDir("pa-route-boundary-invariants-");
+    const project = await writeTestProject(root, [
+      {
+        ...baseClaim("main.claim.target", "obj_20260611_bi01"),
+        object: {
+          uid: "obj_20260611_bi01",
+          name: "main.claim.target",
+          kind: "math",
+          role: "claim",
+          title: "Target",
+          body: ["statement.md"]
+        }
+      },
+      {
+        object: {
+          uid: "obj_20260611_bi02",
+          name: "main.proof.target",
+          kind: "math",
+          role: "proof",
+          title: "Target Proof",
+          body: ["proof.md"],
+          edges: {
+            proves: [{ target: "main.claim.target" }]
+          }
+        },
+        bodies: { "proof.md": "Proof.\n" }
+      }
+    ]);
+    const graph = await buildGraph(project);
+
+    const targetBoundary = resolveRoute(graph, {
+      target: "main.claim.target",
+      profile: "proof",
+      proofChoices: { "main.claim.target": "main.proof.target" },
+      boundaries: ["main.claim.target"]
+    });
+    expect(targetBoundary.diagnostics.map((item) => item.code)).toContain("boundary_is_target");
+    expect(targetBoundary.nodes.find((node) => node.object.name === "main.claim.target")?.decision).toBe("expanded");
+
+    const proofBoundary = resolveRoute(graph, {
+      target: "main.claim.target",
+      profile: "proof",
+      proofChoices: { "main.claim.target": "main.proof.target" },
+      boundaries: ["main.proof.target"]
+    });
+    expect(proofBoundary.diagnostics.map((item) => item.code)).toContain("boundary_is_selected_proof");
+    expect(proofBoundary.nodes.find((node) => node.object.name === "main.proof.target")?.decision).toBe("expanded");
+  });
+
+  it("warns on unused boundaries and omits them from saved routes", async () => {
+    const root = await tempDir("pa-route-unused-boundary-");
+    const project = await writeTestProject(root, [
+      {
+        ...baseClaim("main.claim.target", "obj_20260611_ub01"),
+        object: {
+          uid: "obj_20260611_ub01",
+          name: "main.claim.target",
+          kind: "math",
+          role: "claim",
+          title: "Target",
+          body: ["statement.md"]
+        }
+      },
+      {
+        object: {
+          uid: "obj_20260611_ub02",
+          name: "main.proof.target",
+          kind: "math",
+          role: "proof",
+          title: "Target Proof",
+          body: ["proof.md"],
+          edges: {
+            proves: [{ target: "main.claim.target" }]
+          }
+        },
+        bodies: { "proof.md": "Proof.\n" }
+      },
+      {
+        object: {
+          uid: "obj_20260611_ub03",
+          name: "main.setting.unused",
+          kind: "math",
+          role: "setting",
+          title: "Unused Setting",
+          body: ["body.md"]
+        },
+        bodies: { "body.md": "Unused.\n" }
+      }
+    ]);
+    const graph = await buildGraph(project);
+    const route = resolveRoute(graph, {
+      target: "main.claim.target",
+      profile: "proof",
+      proofChoices: { "main.claim.target": "main.proof.target" },
+      boundaries: ["main.setting.unused"]
+    });
+    expect(route.diagnostics.map((item) => item.code)).toContain("unused_boundary");
+    expect(route.nodes.map((node) => node.object.name)).not.toContain("main.setting.unused");
+    expect(route.boundaries).toEqual([]);
+
+    const originalLog = console.log;
+    console.log = () => undefined;
+    try {
+      await commandRoute("main.claim.target", project, {
+        profile: "proof",
+        save: "views/saved.route.yml",
+        proofChoice: ["main.claim.target=main.proof.target"],
+        boundary: ["main.setting.unused"]
+      });
+    } finally {
+      console.log = originalLog;
+    }
+    const saved = await readYamlFile<{ boundaries: string[] }>(path.join(project, "views", "saved.route.yml"));
+    expect(saved.boundaries).toEqual([]);
+  });
+
+  it("classifies internal boundaries as context cuts", async () => {
+    const root = await tempDir("pa-route-context-cut-");
+    const project = await writeTestProject(root, [
+      {
+        ...baseClaim("main.claim.target", "obj_20260611_cc01"),
+        object: {
+          uid: "obj_20260611_cc01",
+          name: "main.claim.target",
+          kind: "math",
+          role: "claim",
+          title: "Target",
+          body: ["statement.md"],
+          edges: {
+            requires: [{ target: "main.setting.context" }]
+          }
+        }
+      },
+      {
+        object: {
+          uid: "obj_20260611_cc02",
+          name: "main.proof.target",
+          kind: "math",
+          role: "proof",
+          title: "Target Proof",
+          body: ["proof.md"],
+          edges: {
+            proves: [{ target: "main.claim.target" }]
+          }
+        },
+        bodies: { "proof.md": "Proof.\n" }
+      },
+      {
+        object: {
+          uid: "obj_20260611_cc03",
+          name: "main.setting.context",
+          kind: "math",
+          role: "setting",
+          title: "Context",
+          body: ["body.md"]
+        },
+        bodies: { "body.md": "Context.\n" }
+      }
+    ]);
+    const graph = await buildGraph(project);
+    const route = resolveRoute(graph, {
+      target: "main.claim.target",
+      profile: "proof",
+      proofChoices: { "main.claim.target": "main.proof.target" },
+      boundaries: ["main.setting.context"]
+    });
+
+    expect(route.nodes.find((node) => node.object.name === "main.setting.context")?.decision).toBe("boundary");
+    expect(route.diagnostics.map((item) => item.code)).toContain("boundary_kind_warning");
+    expect(route.status.acceptedInputs).toEqual([]);
+    expect(route.status.contextCuts).toEqual(["main.setting.context"]);
+    expect(route.status.context).toBe("insufficient");
+  });
+
+  it("prints route status and witness paths without token costs", async () => {
     const root = await tempDir("pa-route-summary-");
     const project = await writeTestProject(root, [
       {
@@ -640,8 +855,10 @@ describe("generated routes", () => {
 
     const output = lines.join("\n");
     expect(output).toContain("Route target: main.claim.target");
+    expect(output).toContain("Route status: structure open; context insufficient;");
     expect(output).toContain("why: main.claim.target -> main.setting.context");
-    expect(output).toContain("marginal:");
+    expect(output).not.toContain("marginal:");
+    expect(output).not.toContain("tokens=");
   });
 
   it("keeps AI-style suggestions pending until accepted ids are applied", async () => {
