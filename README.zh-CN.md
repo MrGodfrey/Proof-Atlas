@@ -2,11 +2,11 @@
 
 **Proof Atlas 是一个本地优先的数学研究工作台：用 Markdown 写证明正文，用 YAML 描述证明对象图，再用本地网页把整篇研究变成可点击的 atlas。**
 
-[English README](README.md) · [在线文档](https://proof-atlas-demo.pages.dev/wiki/) · [更新日志](CHANGELOG.md) · [在线 Demo](https://proof-atlas-demo.pages.dev) · [示例项目](examples/semidiscrete/ProofAtlas)
+[English README](README.md) · [中文维基](https://proof-atlas-demo.pages.dev/wiki/) · [English wiki](https://proof-atlas-demo.pages.dev/wiki/en/) · [更新日志](CHANGELOG.md) · [在线 Demo](https://proof-atlas-demo.pages.dev) · [示例项目](examples/semidiscrete/ProofAtlas)
 
 **在线体验：** [https://proof-atlas-demo.pages.dev](https://proof-atlas-demo.pages.dev)
 
-**阅读文档：** [https://proof-atlas-demo.pages.dev/wiki/](https://proof-atlas-demo.pages.dev/wiki/)
+**阅读文档：** [中文维基](https://proof-atlas-demo.pages.dev/wiki/) · [English wiki](https://proof-atlas-demo.pages.dev/wiki/en/)
 
 数学论文最终是线性的，但研究过程往往不是线性的。一个定理依赖若干引理，一个证明可能被某个 gap 阻塞，一条失败路线会被新路线替换，某篇文献可能只支撑一个关键估计。Proof Atlas 把这些关系显式保存下来，同时让事实源保持为普通文件，方便 Git、编辑器和本地 AI 直接读写。
 

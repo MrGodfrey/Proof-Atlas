@@ -2,11 +2,11 @@
 
 **Proof Atlas is a local-first workbench for mathematical research: write proofs in Markdown, describe the proof graph in YAML, and browse the whole project as a clickable atlas.**
 
-[中文 README](README.zh-CN.md) · [Documentation](https://proof-atlas-demo.pages.dev/wiki/en/) · [Changelog](CHANGELOG.md) · [Hosted demo](https://proof-atlas-demo.pages.dev) · [Example project](examples/semidiscrete/ProofAtlas)
+[中文 README](README.zh-CN.md) · [中文维基](https://proof-atlas-demo.pages.dev/wiki/) · [English wiki](https://proof-atlas-demo.pages.dev/wiki/en/) · [Changelog](CHANGELOG.md) · [Hosted demo](https://proof-atlas-demo.pages.dev) · [Example project](examples/semidiscrete/ProofAtlas)
 
 **Try the live demo:** [https://proof-atlas-demo.pages.dev](https://proof-atlas-demo.pages.dev)
 
-**Read the docs:** [https://proof-atlas-demo.pages.dev/wiki/en/](https://proof-atlas-demo.pages.dev/wiki/en/)
+**Read the docs:** [中文维基](https://proof-atlas-demo.pages.dev/wiki/) · [English wiki](https://proof-atlas-demo.pages.dev/wiki/en/)
 
 Mathematical writing is linear at the end, but research rarely is. A theorem depends on lemmas, a proof is blocked by a gap, a failed route is replaced by a better one, and a citation may support only one fragile estimate. Proof Atlas keeps those relationships explicit while leaving the source of truth as ordinary files that work with Git, editors, and local AI tools.
 
