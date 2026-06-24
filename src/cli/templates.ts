@@ -46,6 +46,7 @@ export function atlasGitignoreEntries(atlasRoot: string, workspaceRoot: string):
   return [
     `${prefix}.atlas/local.yml`,
     `${prefix}.atlas/cache/`,
+    `${prefix}.atlas/exports/`,
     `${prefix}.atlas/suggestions/`
   ];
 }

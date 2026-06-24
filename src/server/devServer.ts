@@ -2,9 +2,10 @@ import path from "node:path";
 import { createServer as createViteServer, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import chokidar, { type FSWatcher } from "chokidar";
+import { buildRouteExportCommand } from "../core/exportCommand";
 import { buildBodyFiles, buildGraph, findObject } from "../core/graph";
 import { formatLocalReference, type ReferenceSelection } from "../core/reference";
-import { listRegistryProjects, registerResolvedProject, resolveProjectPathOrId } from "../core/registry";
+import { listRegistryProjects, resolveProjectPathOrId } from "../core/registry";
 import { DEV_SERVER_HOST } from "../core/serverConfig";
 import type { NormalizedGraph, ResolvedAtlasProject } from "../core/types";
 
@@ -109,8 +110,6 @@ export async function startDevServer(initialProject: ResolvedAtlasProject | unde
     await closeWatcher();
     currentProject = project;
     graph = await buildGraph(project);
-    const registered = await registerResolvedProject(project, graph.config);
-    if (registered.warning) console.warn(`warning: ${registered.warning}`);
     watchProject();
     buildVersion += 1;
     emitBuildEvent({
@@ -213,6 +212,33 @@ export async function startDevServer(initialProject: ResolvedAtlasProject | unde
         return;
       }
       sendJson(res, { text: formatLocalReference(graph, object, parsed.selection) });
+      return;
+    }
+
+    if (url.pathname === "/api/export-command" && req.method === "POST") {
+      if (!graph) {
+        sendJson(res, { error: "No Proof Atlas project is open." }, 409);
+        return;
+      }
+      const body = await readRequestBody(req);
+      const parsed = body ? JSON.parse(body) as { routePath?: string } : {};
+      if (!parsed.routePath) {
+        sendJson(res, { error: "routePath is required" }, 400);
+        return;
+      }
+      const routeView = graph.routeViews.find((view) => view.path === parsed.routePath);
+      if (!routeView) {
+        sendJson(res, { error: `Route view not found: ${parsed.routePath}` }, 404);
+        return;
+      }
+      try {
+        sendJson(res, buildRouteExportCommand({
+          atlasRoot: graph.atlasRoot,
+          routePath: routeView.path
+        }));
+      } catch (error) {
+        sendJson(res, { error: error instanceof Error ? error.message : String(error) }, 400);
+      }
       return;
     }
 

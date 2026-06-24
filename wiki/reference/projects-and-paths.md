@@ -101,7 +101,7 @@ npm run atlas -- dev /path/to/paper --port 3217
 -> Open
 ```
 
-网页会让后端关闭旧项目 watcher，清空旧 graph 和 problems，重新解析新路径并加载新项目。它仍然一次只打开一个项目。
+网页会让后端关闭旧项目 watcher，清空旧 graph 和 problems，重新解析新路径并加载新项目。它仍然一次只打开一个项目。网页 Open 只切换当前 server 的活动项目，不会写入或更新 `~/.proof-atlas/projects.yml`。
 
 第二种，点最近项目：
 
@@ -111,7 +111,7 @@ npm run atlas -- dev /path/to/paper --port 3217
 -> 点击项目
 ```
 
-最近项目来自本机 `~/.proof-atlas/projects.yml`。先注册一次：
+最近项目只来自本机 `~/.proof-atlas/projects.yml` 中显式注册的项目。先注册一次：
 
 ```bash
 npm run atlas -- register /path/to/paper

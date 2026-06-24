@@ -361,6 +361,41 @@ Path rules:
 - Absolute `--snapshot` paths are used as given; relative paths are relative to the `ProofAtlas/` root.
 - Without `--output`, export writes to stdout.
 
+### Web Export Button
+
+The Generated View `Export` button does not run the CLI and does not directly write files. It only copies a local Terminal command. The command has this general shape:
+
+```bash
+TOOL_ROOT='/path/to/proof-atlas-tool'
+ATLAS_ROOT='/path/to/paper/ProofAtlas'
+ROUTE_FILE='views/example.route.yml'
+OUT='/path/to/paper/ProofAtlas/.atlas/exports/example.context.md'
+
+mkdir -p "$(dirname "$OUT")" &&
+cd "$TOOL_ROOT" &&
+npm run atlas -- export "$ROUTE_FILE" "$ATLAS_ROOT" --format markdown --output "$OUT" &&
+if command -v pbcopy >/dev/null 2>&1; then
+  pbcopy < "$OUT"
+  echo "Wrote and copied: $OUT"
+else
+  echo "Wrote: $OUT"
+fi
+```
+
+These paths are generated at runtime, not hard-coded in the source:
+
+- `TOOL_ROOT` is the Proof Atlas tool repository running the dev server.
+- `ATLAS_ROOT` is the `atlasRoot` of the project currently open in the web UI.
+- `ROUTE_FILE` must be a loaded `views/*.route.yml` in the current project graph; the server rejects route paths that do not belong to the current project.
+- `OUT` defaults to the current project's `.atlas/exports/`. This directory is a local generated artifact and should be ignored by `.gitignore`.
+
+Users normally only need to configure two things:
+
+1. Start the right tool repository and project with `npm run atlas -- dev <paper-root-or-ProofAtlas-root>`.
+2. Use the web `Open` control to switch to the project they want to export.
+
+If the tool repository or project directory moved, restart the dev server or reopen the project before copying the command. The copied command contains local absolute paths and may reveal your username and directory structure; it is meant to be run in your local Terminal, not pasted directly into cloud AI. The generated Markdown context is the material to send to cloud AI. On macOS the command uses `pbcopy` to place the Markdown context on the clipboard; without `pbcopy`, it writes the file and prints the path.
+
 Markdown export:
 
 - Outputs Task, Selected Proof Route, Target, Definitions and Settings, Boundaries, Supporting Claims, Proofs, Issues, Source Manifest, and Diagnostics.

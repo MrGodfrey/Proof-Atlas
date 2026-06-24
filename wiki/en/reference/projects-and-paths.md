@@ -101,7 +101,7 @@ Top Open button
 -> Open
 ```
 
-The web backend closes the old project watcher, clears the graph and problems, resolves the new path, and loads the new project. It still opens one project at a time.
+The web backend closes the old project watcher, clears the graph and problems, resolves the new path, and loads the new project. It still opens one project at a time. Web Open only switches the active project for the current server; it does not write or update `~/.proof-atlas/projects.yml`.
 
 Second, click a recent project:
 
@@ -111,7 +111,7 @@ Top Open button
 -> click project
 ```
 
-Recent projects come from local `~/.proof-atlas/projects.yml`. Register once:
+Recent projects only come from projects explicitly registered in local `~/.proof-atlas/projects.yml`. Register once:
 
 ```bash
 npm run atlas -- register /path/to/paper

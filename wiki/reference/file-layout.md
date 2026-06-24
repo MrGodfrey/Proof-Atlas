@@ -34,6 +34,7 @@
       aliases.yml
       local.yml
       cache/
+      exports/
       suggestions/
 
     AGENTS.md
@@ -55,11 +56,12 @@
 # Proof Atlas local files.
 ProofAtlas/.atlas/local.yml
 ProofAtlas/.atlas/cache/
+ProofAtlas/.atlas/exports/
 ProofAtlas/.atlas/suggestions/
 ```
 
 `local.yml` 可以包含本机绝对路径，不应提交。`cache/` 是运行时缓存，不是项目事实源。
-`suggestions/` 用于保存待确认 LLM / local AI 建议，也默认不提交。
+`exports/` 保存由网页 Export 命令生成的云端 AI Markdown context；`suggestions/` 用于保存待确认 LLM / local AI 建议，也默认不提交。
 
 ## `atlas.yml`
 

@@ -552,6 +552,7 @@ function compactDemoGraphPaths(graph: Awaited<ReturnType<typeof buildGraph>>, re
 
   const compactObject = (object: typeof demoGraph.objects[number]) => {
     object.origin.atlasRoot = compact(object.origin.atlasRoot) ?? object.origin.atlasRoot;
+    if (object.citation?.bibfile) object.citation.bibfile = compact(object.citation.bibfile);
   };
   for (const object of demoGraph.objects) compactObject(object);
   for (const object of Object.values(demoGraph.objectsByUid)) compactObject(object);

@@ -7,8 +7,8 @@
 - 右栏：当前选中对象的详情和关系。
 
 网页本身是只读浏览层。它会读取本地 `ProofAtlas/` 文件并展示对象图，但不会直接写
-`object.yml`、正文 Markdown、`views/*.route.yml` 或导出文件。需要写文件时，使用
-CLI、本地 AI 或编辑器。
+`object.yml`、正文 Markdown、`views/*.route.yml`、导出文件，或最近项目 registry
+`~/.proof-atlas/projects.yml`。需要写文件时，使用 CLI、本地 AI 或编辑器。
 
 ## 顶部工具栏
 
@@ -17,7 +17,7 @@ CLI、本地 AI 或编辑器。
 | 按钮 | 作用 | 是否写文件 |
 |---|---|---|
 | 菜单图标 | 显示或隐藏左栏。 | 否 |
-| `Open` | 输入项目路径、paper root 或最近项目 ID，切换当前打开的 Proof Atlas 项目。 | 否 |
+| `Open` | 输入项目路径、paper root 或最近项目 ID，切换当前打开的 Proof Atlas 项目，但不登记项目。 | 否 |
 | `Filter` | 过滤左栏和 view 中显示的对象状态、对象 kind。 | 否 |
 | `Build OK` / `problem(s)` / `Build error` | 查看当前对象图的校验结果。点击问题可以跳到相关对象。 | 否 |
 
@@ -105,15 +105,42 @@ target object · proof tree · route status
 这行说明当前生成视图的目标和 route 是否闭合。紧凑摘要条还显示 target status、
 boundary 数、proof choice 数、diagnostics 数和 token 估算。
 
-Generated View 顶部有三个复制按钮：
+Generated View 顶部有两个复制按钮：
 
 | 按钮 | 复制什么 | 什么时候用 | 是否写文件 |
 |---|---|---|---|
-| `Route` | 复制一条 `npm run atlas -- route ...` 命令。 | 想在终端复现当前 route 解析结果，查看闭合性、proof choices、token 和 inclusion reason。 | 否 |
-| `Local AI` | 复制一段给本地 AI 的请求，包含 route 文件路径和工作目标。 | 想让本地 AI 读取项目文件，审查这条 route、建议缺边、summary 或叙事顺序。 | 否 |
-| `Export` | 复制一条 `npm run atlas -- export ... --format markdown` 命令。 | 想生成可发给云端 AI 的完整 Markdown context。 | 否，复制命令本身不写；运行命令才会按参数输出文件或 stdout。 |
+| `Local AI` | 复制一段给本地 AI 的短引用，包含当前项目、route 文件和 target。 | 想让本地 AI 读取项目文件，审查这条 route、建议缺边、summary 或叙事顺序。 | 否 |
+| `Export` | 复制一段可直接粘贴到 Terminal 的命令。命令会进入 Proof Atlas 工具仓库，导出当前 route 的 Markdown context 到 `ProofAtlas/.atlas/exports/`，并在 macOS 上用 `pbcopy` 放入剪贴板。 | 想生成可发给云端 AI 的完整 Markdown context。 | 复制按钮不写；运行命令会写入 `.atlas/exports/`。 |
 
-这三个按钮都只是复制文本到剪贴板。浏览器不会替你创建 route、不会把 LLM 建议写回对象，也不会直接导出文件。
+这两个按钮都只是复制文本到剪贴板。浏览器不会替你创建 route、不会把 LLM 建议写回对象，也不会直接导出文件。
+
+### Export 命令中的路径从哪里来
+
+`Export` 按钮复制的是本机 Terminal 命令。命令里的路径不是源码硬编码，也不来自 wiki
+示例，而是在当前 dev server 运行时生成：
+
+- `TOOL_ROOT` 来自正在运行的 Proof Atlas 工具仓库，也就是包含 `package.json`
+  和 `npm run atlas` 的目录。
+- `ATLAS_ROOT` 来自当前网页已经打开的项目，即当前 graph 的 `atlasRoot`。
+- `ROUTE_FILE` 来自当前 Generated View 对应的 `views/*.route.yml` 文件；后端会校验它必须属于当前项目的 `routeViews`。
+- `OUT` 默认派生为当前项目下的 `ProofAtlas/.atlas/exports/<route>.context.md`。
+
+因此，同一个按钮在不同项目中复制出的命令会不同；它指向的是你当前网页正在看的项目和
+route。路径使用绝对路径并做 shell quoting，所以即使 Terminal 当前目录不是 Proof Atlas
+工具仓库，也可以直接粘贴运行。
+
+通常不需要手动配置这些路径。需要改变路径时：
+
+1. 换项目：用网页顶部 `Open` 打开新的 paper root 或 `ProofAtlas/` 目录，再点 `Export`。
+2. 移动项目目录：重新 `Open` 新路径，或者重启 dev server 时传入新路径。
+3. 移动工具仓库：从新的工具仓库目录重新启动 `npm run atlas -- dev ...`。
+4. `3217` 上的服务是旧进程时：重启 dev server；旧进程不会自动拥有新加的 API。
+
+命令里会包含本机绝对路径，例如用户名、仓库路径和项目路径。这些不是写死在源码里的个人信息，
+而是为了让本机 Terminal 可以从任意目录运行。如果不希望把本机路径发给云端 AI，不要把
+这条 Terminal 命令本身贴给云端；在本机运行它后，再把生成的 Markdown context 贴给云端。
+在 macOS 上命令会用 `pbcopy` 把 Markdown context 放入剪贴板；没有 `pbcopy` 时，它只会打印
+写入的文件路径。
 
 如果 route 有 open nodes 或 diagnostics，顶部提示和诊断项会显示在 Generated View 顶部。
 其中能解析到对象的名称或诊断项可以点击；点击只会在右栏选中相关对象，方便查看

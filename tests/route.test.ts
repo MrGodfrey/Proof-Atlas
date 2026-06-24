@@ -2,6 +2,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { commandRoute } from "../src/cli/atlas";
 import { createSnapshot, exportRoute } from "../src/core/contextExporter";
+import { buildRouteExportCommand, routeExportOutputPath, shellQuote } from "../src/core/exportCommand";
 import { buildGraph } from "../src/core/graph";
 import { isProofObligationObject } from "../src/core/proofObjects";
 import { linearizeRoute } from "../src/core/routeLinearizer";
@@ -12,6 +13,35 @@ import { writeYamlFile } from "../src/core/yaml";
 import { baseClaim, tempDir, writeTestProject } from "./helpers";
 
 describe("generated routes", () => {
+  it("builds terminal-ready export commands with stable output paths and shell quoting", () => {
+    const atlasRoot = "/tmp/Paper's Workspace/ProofAtlas";
+    const routePath = "views/sub/null control.route.yml";
+    const outputPath = routeExportOutputPath(atlasRoot, routePath);
+    const result = buildRouteExportCommand({
+      toolRoot: "/tmp/proof atlas tool",
+      atlasRoot,
+      routePath
+    });
+
+    expect(shellQuote("a'b")).toBe(`'a'"'"'b'`);
+    expect(outputPath).toBe(path.join(atlasRoot, ".atlas", "exports", "sub", "null control.context.md"));
+    expect(result.outputPath).toBe(outputPath);
+    expect(result.command).toContain("TOOL_ROOT='/tmp/proof atlas tool'");
+    expect(result.command).toContain(`ATLAS_ROOT='/tmp/Paper'"'"'s Workspace/ProofAtlas'`);
+    expect(result.command).toContain("ROUTE_FILE='views/sub/null control.route.yml'");
+    expect(result.command).toContain("npm run atlas -- export \"$ROUTE_FILE\" \"$ATLAS_ROOT\" --format markdown --output \"$OUT\"");
+    expect(result.command).toContain("pbcopy < \"$OUT\"");
+    expect(result.command).not.toContain("npm run atlas -- route");
+  });
+
+  it("rejects unsafe route paths when building export commands", () => {
+    expect(() => routeExportOutputPath("/tmp/project/ProofAtlas", "../outside.route.yml")).toThrow("Invalid route file path");
+    expect(() => routeExportOutputPath("/tmp/project/ProofAtlas", "/tmp/absolute.route.yml")).toThrow("Invalid route file path");
+    expect(() => routeExportOutputPath("/tmp/project/ProofAtlas", String.raw`C:\tmp\absolute.route.yml`)).toThrow("Invalid route file path");
+    expect(() => routeExportOutputPath("/tmp/project/ProofAtlas", String.raw`views\..\outside.route.yml`)).toThrow("Invalid route file path");
+    expect(() => routeExportOutputPath("/tmp/project/ProofAtlas", "views/not-a-route.yml")).toThrow("Invalid route file path");
+  });
+
   it("resolves the semidiscrete null controllability proof route", async () => {
     const graph = await buildGraph("examples/semidiscrete/ProofAtlas");
     const routeView = graph.routeViews.find((view) => view.path === "views/null_controllability.route.yml");

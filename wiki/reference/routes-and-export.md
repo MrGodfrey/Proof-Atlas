@@ -368,6 +368,45 @@ npm run atlas -- export views/null_controllability.route.yml \
 - `--snapshot` 是绝对路径时按原路径写；相对路径时相对 `ProofAtlas/` 根目录。
 - 不传 `--output` 时，导出内容写到 stdout。
 
+### 网页 Export 按钮
+
+网页 Generated View 的 `Export` 按钮不会直接运行 CLI，也不会直接写文件。它只复制一段本机
+Terminal 命令。命令大致形态是：
+
+```bash
+TOOL_ROOT='/path/to/proof-atlas-tool'
+ATLAS_ROOT='/path/to/paper/ProofAtlas'
+ROUTE_FILE='views/example.route.yml'
+OUT='/path/to/paper/ProofAtlas/.atlas/exports/example.context.md'
+
+mkdir -p "$(dirname "$OUT")" &&
+cd "$TOOL_ROOT" &&
+npm run atlas -- export "$ROUTE_FILE" "$ATLAS_ROOT" --format markdown --output "$OUT" &&
+if command -v pbcopy >/dev/null 2>&1; then
+  pbcopy < "$OUT"
+  echo "Wrote and copied: $OUT"
+else
+  echo "Wrote: $OUT"
+fi
+```
+
+这些路径是运行时生成的，不是源码硬编码：
+
+- `TOOL_ROOT` 是当前 dev server 所在的 Proof Atlas 工具仓库。
+- `ATLAS_ROOT` 是网页当前打开项目的 `atlasRoot`。
+- `ROUTE_FILE` 必须是当前项目 graph 中已加载的 `views/*.route.yml`；后端会拒绝不属于当前项目的 route path。
+- `OUT` 默认写到当前项目的 `.atlas/exports/`。该目录是本机生成物，应由 `.gitignore` 忽略。
+
+用户通常只需要配置两件事：
+
+1. 用 `npm run atlas -- dev <paper-root-or-ProofAtlas-root>` 启动正确的工具仓库和项目。
+2. 在网页里用 `Open` 切到当前要导出的项目。
+
+如果移动了工具仓库或项目目录，重启 dev server 或重新 `Open` 项目后再复制命令。复制出的命令
+包含本机绝对路径，可能暴露用户名和目录结构；它应当在本机 Terminal 运行，不应直接贴给云端
+AI。运行后生成的 Markdown context 才是给云端 AI 的材料。macOS 上命令会用 `pbcopy` 把
+Markdown context 放入剪贴板；没有 `pbcopy` 时，只写文件并打印路径。
+
 Markdown 导出会：
 
 - 输出 Task、Selected Proof Route、Target、Definitions and Settings、Boundaries、Supporting Claims、Proofs、Issues、Source Manifest 和 Diagnostics。

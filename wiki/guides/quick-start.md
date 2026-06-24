@@ -74,7 +74,7 @@ workspace:
     - ../bibitems.bib
 ```
 
-网页已经打开某个项目时，用顶部 `Open` 按钮输入这个 paper root 即可切换；也可以 `Ctrl+C` 停掉当前 server 后重新运行 `npm run atlas -- dev <paper-root>`。
+网页已经打开某个项目时，用顶部 `Open` 按钮输入这个 paper root 即可切换；也可以 `Ctrl+C` 停掉当前 server 后重新运行 `npm run atlas -- dev <paper-root>`。网页 Open 不会把项目加入 recent projects；需要出现在 recent list 中时，运行 `npm run atlas -- register <paper-root>`。
 
 如果项目引用共享 Reference Atlas，在 `ProofAtlas/atlas.yml` 中声明挂载：
 
@@ -118,6 +118,6 @@ npm run atlas -- rename old.name new.name examples/semidiscrete
 
 快速开始只说明怎么跑起来。跑起来之后建议继续读：
 
-1. [页面和跳转](navigation.md)：了解三栏布局、顶部工具栏、Generated View、`Route` / `Local AI` / `Export` 等按钮。
+1. [页面和跳转](navigation.md)：了解三栏布局、顶部工具栏、Generated View、`Local AI` / `Export` 等按钮。
 2. [核心概念与操作流程](concepts-and-workflows.md)：了解对象图、route、导出、本地 AI、LLM 建议和常见场景。
 3. [设计理念](../design/philosophy.md)：了解为什么文件是事实源、网页为什么只读、为什么内容充分优先于极限 token 压缩。

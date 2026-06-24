@@ -6,7 +6,7 @@ The web UI has three columns:
 - Center: the current view reading area.
 - Right: details and relationships for the selected object.
 
-The web UI is a read-only browsing layer. It reads local `ProofAtlas/` files and displays the object graph, but it does not directly write `object.yml`, body Markdown, `views/*.route.yml`, or export files. Use the CLI, local AI, or an editor for file writes.
+The web UI is a read-only browsing layer. It reads local `ProofAtlas/` files and displays the object graph, but it does not directly write `object.yml`, body Markdown, `views/*.route.yml`, export files, or the recent-project registry at `~/.proof-atlas/projects.yml`. Use the CLI, local AI, or an editor for file writes.
 
 ## Top Toolbar
 
@@ -15,7 +15,7 @@ The top toolbar controls the current project, filters, and build state:
 | Button | Purpose | Writes files |
 |---|---|---|
 | Menu icon | Show or hide the left column. | No |
-| `Open` | Enter a project path, paper root, or recent project ID to switch the active Proof Atlas project. | No |
+| `Open` | Enter a project path, paper root, or recent project ID to switch the active Proof Atlas project without registering it. | No |
 | `Filter` | Filter object status and object kind in the left column and views. | No |
 | `Build OK` / `problem(s)` / `Build error` | Open validation results for the current object graph. Clicking a problem can jump to the related object. | No |
 
@@ -95,15 +95,34 @@ target object · proof tree · route status
 
 This reports the target and whether the route is closed. The compact summary strip also shows target status, boundary count, proof-choice count, diagnostic count, and token estimate.
 
-Generated View has three copy buttons:
+Generated View has two copy buttons:
 
 | Button | Copies | When to use | Writes files |
 |---|---|---|---|
-| `Route` | A `npm run atlas -- route ...` command. | Reproduce route resolution in the terminal and inspect closure, proof choices, token estimates, and inclusion reasons. | No |
-| `Local AI` | A prompt for local AI containing the route file path and task goal. | Ask local AI to read project files and review the route, missing edges, summaries, or narrative order. | No |
-| `Export` | A `npm run atlas -- export ... --format markdown` command. | Generate a full Markdown context for cloud AI. | Copying does not write. Running the command may write output or stdout. |
+| `Local AI` | A short local-AI reference containing the current project, route file, and target. | Ask local AI to read project files and review the route, missing edges, summaries, or narrative order. | No |
+| `Export` | A terminal-ready command. It changes into the Proof Atlas tool repository, exports the current route's Markdown context to `ProofAtlas/.atlas/exports/`, and uses `pbcopy` on macOS to put the Markdown on the clipboard. | Generate a full Markdown context for cloud AI. | Copying does not write. Running the command writes into `.atlas/exports/`. |
 
 These buttons only copy text to the clipboard. The browser does not create routes, apply LLM suggestions, or export files directly.
+
+### Where Export Command Paths Come From
+
+The `Export` button copies a local Terminal command. The paths in that command are not hard-coded in the source code and do not come from wiki examples; the running dev server generates them from the current runtime state:
+
+- `TOOL_ROOT` comes from the running Proof Atlas tool repository, the directory that contains `package.json` and `npm run atlas`.
+- `ATLAS_ROOT` comes from the currently open web project, specifically the current graph's `atlasRoot`.
+- `ROUTE_FILE` comes from the current Generated View's `views/*.route.yml` file; the server verifies that it belongs to the current project's `routeViews`.
+- `OUT` defaults to `ProofAtlas/.atlas/exports/<route>.context.md` inside the current project.
+
+That means the same button copies a different command after you switch projects. The command uses absolute paths and shell quoting so it can be pasted into a Terminal whose current directory is not the Proof Atlas tool repository.
+
+Usually there is nothing to configure manually:
+
+1. To switch projects, use the top `Open` control with the new paper root or `ProofAtlas/` directory, then click `Export`.
+2. If a project moved, open the new path in the web UI, or restart the dev server with the new path.
+3. If the tool repository moved, restart `npm run atlas -- dev ...` from the new tool repository.
+4. If the service on `3217` is an old process, restart the dev server; old processes do not automatically gain newly added APIs.
+
+The copied command includes local absolute paths such as your username, repository path, and project path. These are runtime values, not personal information hard-coded into Proof Atlas. They are included so the command works from any local Terminal directory. If you do not want local paths sent to cloud AI, do not paste the Terminal command itself into cloud AI. Run it locally, then paste the generated Markdown context. On macOS the command uses `pbcopy` to put the Markdown context on the clipboard; without `pbcopy`, it prints the written file path.
 
 If the route has open nodes or diagnostics, the banner and diagnostic items appear at the top of Generated View.
 Object names and diagnostics that resolve to an object are clickable; clicking only selects the related object in the right column so you can inspect `Route inclusion`, and it does not modify the route file.

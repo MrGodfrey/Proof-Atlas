@@ -74,7 +74,7 @@ workspace:
     - ../bibitems.bib
 ```
 
-If the web UI is already serving a project, use the top `Open` button and enter the paper root to switch projects. You can also stop the current server with `Ctrl+C` and rerun `npm run atlas -- dev <paper-root>`.
+If the web UI is already serving a project, use the top `Open` button and enter the paper root to switch projects. You can also stop the current server with `Ctrl+C` and rerun `npm run atlas -- dev <paper-root>`. Web Open does not add the project to recent projects; run `npm run atlas -- register <paper-root>` when you want it listed there.
 
 If the project uses a shared Reference Atlas, declare the mount in `ProofAtlas/atlas.yml`:
 
@@ -118,6 +118,6 @@ npm run atlas -- rename old.name new.name examples/semidiscrete
 
 Quick start only gets the project running. After that, read:
 
-1. [Navigation and UI controls](navigation.md): three-column layout, top toolbar, Generated View, `Route` / `Local AI` / `Export`.
+1. [Navigation and UI controls](navigation.md): three-column layout, top toolbar, Generated View, `Local AI` / `Export`.
 2. [Concepts and workflows](concepts-and-workflows.md): object graphs, routes, exports, local AI, LLM suggestions, and common scenarios.
 3. [Design philosophy](../design/philosophy.md): why files are the source of truth, why the web UI is read-only, and why sufficient context matters more than aggressive token compression.

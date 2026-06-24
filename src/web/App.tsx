@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   Copy,
+  FileDown,
   FileText,
   Filter,
   FolderOpen,
@@ -48,6 +49,9 @@ type ReferenceSelection = {
   block: string;
   kind: BodyFile["blocks"][number]["kind"];
   excerpt: string;
+};
+type RouteExportCommandResponse = {
+  command?: string;
 };
 type AppState =
   | { mode: "loading" }
@@ -257,6 +261,18 @@ function objectCardSelector(uid: string): string {
 
 function titleForPath(path: string): string {
   return path.replace(/^views\//, "").replace(/\.md$/, "");
+}
+
+function routeExportStem(routePath: string): string {
+  const baseName = routePath.split(/[\\/]/).pop() ?? "route";
+  return baseName
+    .replace(/\.route\.ya?ml$/i, "")
+    .replace(/\.(ya?ml|json|md)$/i, "") || "route";
+}
+
+function quoteShellArg(value: string): string {
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value;
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 function viewLabel(view?: AtlasView): string {
@@ -538,6 +554,7 @@ export default function App() {
   const pendingObjectLinkClick = useRef<number | null>(null);
   const pendingCenterScroll = useRef<number | null>(null);
   const scrollWriteFrame = useRef<number | null>(null);
+  const toastTimer = useRef<number | null>(null);
 
   const refreshState = useCallback(async () => {
     if (STATIC_DEMO_MODE) {
@@ -599,6 +616,10 @@ export default function App() {
       events?.close();
     };
   }, [refreshState]);
+
+  useEffect(() => () => {
+    if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
+  }, []);
 
   useLayoutEffect(() => {
     if (pendingCenterScroll.current === null) return;
@@ -1010,6 +1031,16 @@ export default function App() {
     });
   }, [detailWidth, leftWidth]);
 
+  const copyTextWithToast = useCallback(async (title: string, text: string) => {
+    await navigator.clipboard?.writeText(text).catch(() => undefined);
+    setToast({ title, text });
+    if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimer.current = null;
+    }, 3600);
+  }, []);
+
   const copyReference = useCallback(async (object: NormalizedObject) => {
     const selection = getSelectionForReference();
     let text: string;
@@ -1025,12 +1056,10 @@ export default function App() {
       const data = await response.json() as { text: string };
       text = data.text;
     }
-    await navigator.clipboard?.writeText(text).catch(() => undefined);
+    await copyTextWithToast("Copied local reference", text);
     setCopiedUid(object.uid);
-    setToast({ title: "Copied local reference", text });
     setTimeout(() => setCopiedUid(null), 1500);
-    setTimeout(() => setToast(null), 3600);
-  }, [graph]);
+  }, [copyTextWithToast, graph]);
 
   const openProjectFromLauncher = useCallback(async (input: string): Promise<string | undefined> => {
     if (STATIC_DEMO_MODE) return "The hosted demo is read-only and uses the bundled example atlas.";
@@ -1163,6 +1192,7 @@ export default function App() {
               selectedUid={sideObject?.uid}
               onSelect={selectObject}
               onOpenFull={openFull}
+              onCopyText={copyTextWithToast}
             />
           ) : currentView ? (
             <ViewPane
@@ -1842,6 +1872,7 @@ function GeneratedRoutePane(props: {
   selectedUid?: string;
   onSelect: (object: NormalizedObject) => void;
   onOpenFull: (object: NormalizedObject) => void;
+  onCopyText: (title: string, text: string) => Promise<void>;
 }) {
   const routeUiKey = `proof-atlas:route-ui:${props.graph.root}:${props.routeView.path}`;
   const initialRouteUi = readRoutePaneUiState(routeUiKey);
@@ -1928,23 +1959,47 @@ function GeneratedRoutePane(props: {
       return next;
     });
   };
-  const copyCommand = async (command: string) => {
-    await navigator.clipboard?.writeText(command).catch(() => undefined);
+  const staticExportCommand = useMemo(() => {
+    const atlasRoot = props.graph.atlasRoot || "examples/semidiscrete/ProofAtlas";
+    const outputPath = `${atlasRoot.replace(/\/+$/, "")}/.atlas/exports/${routeExportStem(props.routeView.path)}.context.md`;
+    return [
+      `OUT=${quoteShellArg(outputPath)}`,
+      `mkdir -p "$(dirname "$OUT")"`,
+      `npm run atlas -- export ${quoteShellArg(props.routeView.path)} ${quoteShellArg(atlasRoot)} --format markdown > "$OUT"`,
+      `if command -v pbcopy >/dev/null 2>&1; then pbcopy < "$OUT"; fi`,
+      `printf 'Wrote %s\\n' "$OUT"`
+    ].join("; ");
+  }, [props.graph.atlasRoot, props.routeView.path]);
+  const copyExportCommand = async () => {
+    if (STATIC_DEMO_MODE) {
+      await props.onCopyText("Copied export command", staticExportCommand);
+      return;
+    }
+    try {
+      const response = await fetch("/api/export-command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ routePath: props.routeView.path })
+      });
+      const data = await response.json() as RouteExportCommandResponse;
+      if (response.ok && data.command) await props.onCopyText("Copied export command", data.command);
+    } catch {
+      // Copy actions should not interrupt reading if the dev server reloads mid-click.
+    }
   };
-  const routeCommand = `npm run atlas -- route ${props.routeView.path} ${props.graph.root}`;
-  const exportCommand = `npm run atlas -- export ${props.routeView.path} ${props.graph.root} --format markdown`;
   const localAiRequest = [
-    `Inspect the Proof Atlas generated route ${props.routeView.path}.`,
-    `Project: ${props.graph.root}`,
-    `Target: ${resolved.target.name}`,
-    `Run: ${routeCommand}`,
-    `Cloud context: ${exportCommand}`
+    "ProofAtlas generated route reference",
+    `project: ${props.graph.config.project}`,
+    `atlas_root: ${props.graph.atlasRoot}`,
+    `workspace_root: ${props.graph.workspaceRoot ?? ""}`,
+    `route_file: ${props.routeView.path}`,
+    `route_uid: ${props.routeView.route.uid}`,
+    `target: ${resolved.target.name}`
   ].join("\n");
 
   const renderTreeNode = (node: ProofTreeNode): ReactNode => {
     const hasChildren = node.children.length > 0;
     const expanded = expandedNodes.has(node.id);
-    const roleLabel = node.role.replaceAll("_", " ");
     return (
       <div
         key={node.id}
@@ -1987,8 +2042,13 @@ function GeneratedRoutePane(props: {
               <code>{node.object.name}</code>
             </span>
             <span className="route-chip route-chip-class">{node.object.display_as}</span>
-            <span className={`route-chip route-chip-decision role-${node.role}`}>{roleLabel}</span>
-            {node.routeNode && <span className="route-chip route-chip-representation">{node.routeNode.representation}</span>}
+            <span
+              className="route-chip route-chip-status"
+              style={{ background: statusColor(node.object.status) }}
+              title={`Status: ${node.object.status}`}
+            >
+              {node.object.status}
+            </span>
           </button>
         </div>
         {expanded && hasChildren && <div className="proof-tree-children">{node.children.map(renderTreeNode)}</div>}
@@ -2025,24 +2085,17 @@ function GeneratedRoutePane(props: {
         <div className="generated-actions">
           <button
             className="toolbar-button"
-            title="Copy the CLI command that resolves this generated route."
-            onClick={() => void copyCommand(routeCommand)}
-          >
-            <Copy size={13} /> Route
-          </button>
-          <button
-            className="toolbar-button"
             title="Copy a local-AI prompt with this project and route context."
-            onClick={() => void copyCommand(localAiRequest)}
+            onClick={() => void props.onCopyText("Copied local AI route reference", localAiRequest)}
           >
             <Copy size={13} /> Local AI
           </button>
           <button
             className="toolbar-button"
-            title="Copy the CLI command that exports this route as Markdown."
-            onClick={() => void copyCommand(exportCommand)}
+            title="Copy a terminal command that writes Markdown context and copies it to the clipboard."
+            onClick={() => void copyExportCommand()}
           >
-            <Copy size={13} /> Export
+            <FileDown size={13} /> Export
           </button>
         </div>
       </div>
@@ -2606,10 +2659,10 @@ function DetailPanel(props: {
           />
         </div>
       </div>
+      <RelationList graph={props.graph} object={props.object} onSelect={props.onSelect} onOpenPreview={props.onOpenPreview} />
       {props.routeNode && (
         <RouteInclusionPanel node={props.routeNode} diagnostics={props.routeDiagnostics ?? []} />
       )}
-      <RelationList graph={props.graph} object={props.object} onSelect={props.onSelect} onOpenPreview={props.onOpenPreview} />
       <div className="detail-section">
         <div className="detail-label">Body files</div>
         {props.object.body.map((file) => <code className="body-chip" key={file}>{file}</code>)}
