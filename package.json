@@ -1,6 +1,6 @@
 {
   "name": "proof-atlas",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "A local, file-driven workbench for mathematical proof graphs.",
   "license": "MIT",
   "engines": {

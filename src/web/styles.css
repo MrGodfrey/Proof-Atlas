@@ -292,6 +292,9 @@ body.resizing-columns * { cursor: col-resize !important; }
 .false-banner { border-top: 0; border-bottom: 1px solid #f0d2d2; color: #b71c1c; }
 .card-body { padding: 3px 18px 16px 19px; }
 .card-summary { color: #6b6760; font: 400 15px/1.62 var(--pa-serif); }
+.card-summary .card-summary-markdown { display: inline; color: inherit; font: inherit; }
+.card-summary .card-summary-markdown p { display: inline; margin: 0; }
+.card-summary .card-summary-markdown p + p { display: block; margin-top: 8px; }
 .card-summary button { margin-left: 6px; color: #5a4fcf; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; font: 500 12.5px/1 Inter, sans-serif; }
 .body-loading { color: #a8a499; font-size: 13px; padding: 12px 0; }
 

@@ -61,7 +61,7 @@ When machines write objects, use this page and the code enums. Do not invent nea
 | `display_as` | No | derived from `kind + role` | Visual presentation type; does not change semantic identity. |
 | `importance` | No | `supporting` | Route sorting and human reading priority. |
 | `status` | No | `open` for issues, otherwise `draft` | Current trust, lifecycle, or issue state. |
-| `summary` | No | none | Short text used by route `summary` representation and lists. |
+| `summary` | No | none | Short text used by route `summary` representation and lists; may include light Markdown and `$...$` math. |
 | `priority` | recommended for issues | `normal` for issues | Issue handling priority. |
 | `provenance` | No | `internal` | Trust boundary: internal, external, or imported. |
 | `tags` | No | `[]` | Free-form tags for search and manual organization. |
@@ -418,7 +418,7 @@ If `parent` is present, it must resolve to an object in the current graph.
 
 ## `summary`
 
-`summary` is short text, not a replacement for Markdown body. It is used for:
+`summary` is short text, not a replacement for Markdown body. It may include light inline Markdown; math delimited with `$...$` or `$$...$$` renders in web card summaries. It is used for:
 
 - Object lists and route node summaries.
 - Route export `summary` representation.

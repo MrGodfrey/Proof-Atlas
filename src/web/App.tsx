@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { ACTIVE_STATUS, STATUS_COLORS } from "../core/constants";
 import { edgeTargets } from "../core/edgeUtils";
+import { renderMarkdownBlock } from "../core/render";
 import { deriveRouteProofTree, type ProofTreeNode } from "../core/routeProofTree";
 import { resolveRoute, type ResolvedRouteNode, type RouteDiagnostic } from "../core/routeResolver";
 import { isObjectCardExpanded, nextObjectExpansionState } from "./cardExpansion";
@@ -363,6 +364,16 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function resolveGraphObject(graph: NormalizedGraph, target: string): NormalizedObject | undefined {
+  const aliasUid = graph.aliases[target];
+  return graph.objectsByName[target] ?? graph.objectsByUid[target] ?? (aliasUid ? graph.objectsByUid[aliasUid] : undefined);
+}
+
+export function renderObjectSummaryHtml(object: NormalizedObject, graph: NormalizedGraph): string | undefined {
+  if (!object.summary) return undefined;
+  return renderMarkdownBlock(object.summary, (name) => resolveGraphObject(graph, name), object.name);
+}
+
 function linkedObjectFromTarget(target: EventTarget | null, graph: NormalizedGraph): { element: HTMLElement; object: NormalizedObject } | undefined {
   const targetElement = target instanceof Element
     ? target
@@ -373,7 +384,7 @@ function linkedObjectFromTarget(target: EventTarget | null, graph: NormalizedGra
   if (ignoresObjectLinkTarget(targetElement)) return undefined;
   const element = targetElement.closest("[data-object-name]") as HTMLElement | null;
   if (!element) return undefined;
-  const object = graph.objectsByName[element.dataset.objectName ?? ""];
+  const object = resolveGraphObject(graph, element.dataset.objectName ?? "");
   return object ? { element, object } : undefined;
 }
 
@@ -2428,10 +2439,14 @@ function ObjectCard(props: {
       onOpenPreview={props.onOpenPreview}
     />
   ) : (
-    <div className="card-summary">
-      {props.object.summary || (isProof ? "Proof details are folded until needed." : "Open the card to read this object.")}
-      {isProof && <button onClick={props.onToggle}>Show proof ({edgeTargets(props.object.edges.uses).length} uses) <ChevronDown size={13} /></button>}
-    </div>
+    <ObjectSummary
+      graph={props.graph}
+      object={props.object}
+      isProof={isProof}
+      onToggle={props.onToggle}
+      onSelect={props.onOpenSide}
+      onOpenPreview={props.onOpenPreview}
+    />
   );
   return (
     <article
@@ -2469,6 +2484,33 @@ function ObjectCard(props: {
       )}
       <div className="card-body">{cardBody}</div>
     </article>
+  );
+}
+
+function ObjectSummary(props: {
+  graph: NormalizedGraph;
+  object: NormalizedObject;
+  isProof: boolean;
+  onToggle: () => void;
+  onSelect: (object: NormalizedObject) => void;
+  onOpenPreview: (object: NormalizedObject) => void;
+}) {
+  const html = renderObjectSummaryHtml(props.object, props.graph);
+  return (
+    <div className="card-summary">
+      {html ? (
+        <LinkedProse
+          graph={props.graph}
+          className="card-summary-markdown prose"
+          html={html}
+          onSelect={props.onSelect}
+          onOpenPreview={props.onOpenPreview}
+        />
+      ) : (
+        <span>{props.isProof ? "Proof details are folded until needed." : "Open the card to read this object."}</span>
+      )}
+      {props.isProof && <button onClick={props.onToggle}>Show proof ({edgeTargets(props.object.edges.uses).length} uses) <ChevronDown size={13} /></button>}
+    </div>
   );
 }
 

@@ -6,6 +6,7 @@ import { parseMarkdownReferences, rewriteMarkdownObjectNames } from "../src/core
 import { hasCheckErrors } from "../src/core/problems";
 import { formatLocalReference } from "../src/core/reference";
 import { renderMarkdownBlock } from "../src/core/render";
+import { renderObjectSummaryHtml } from "../src/web/App";
 import { baseClaim, tempDir, writeTestProject } from "./helpers";
 
 describe("Proof Atlas core", () => {
@@ -85,6 +86,31 @@ describe("Proof Atlas core", () => {
     expect(html).toContain(">(energy identity)</a>");
     expect(html).toContain(">[Boyer 2010]</a>");
     expect(html).toContain(">the claim</a>");
+  });
+
+  it("renders object summaries as Markdown with math", async () => {
+    const root = await tempDir("pa-summary-math-");
+    const project = await writeTestProject(root, [
+      {
+        object: {
+          uid: "obj_20260611_aaaa",
+          name: "main.claim.a",
+          kind: "math",
+          role: "claim",
+          title: "A",
+          body: ["statement.md"],
+          summary: "Spectral cutoff $\\Pi_{\\le N}$ uses [[main.claim.helper|helper]]."
+        },
+        bodies: { "statement.md": "Claim body.\n" }
+      },
+      baseClaim("main.claim.helper", "obj_20260611_bbbb")
+    ]);
+    const graph = await buildGraph(project);
+    const html = renderObjectSummaryHtml(graph.objectsByName["main.claim.a"], graph);
+
+    expect(html).toContain("class=\"katex\"");
+    expect(html).not.toContain("$\\Pi");
+    expect(html).toContain("data-object-name=\"main.claim.helper\"");
   });
 
   it("reports strict validation errors for bad protocol data", async () => {

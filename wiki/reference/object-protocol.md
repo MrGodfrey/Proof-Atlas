@@ -61,7 +61,7 @@ citation:
 | `display_as` | 否 | 由 `kind + role` 推导 | 视觉展示类型，不改变语义身份。 |
 | `importance` | 否 | `supporting` | 路线排序和人工阅读优先级。 |
 | `status` | 否 | `issue` 默认为 `open`，其他默认为 `draft` | 当前可信度、生命周期或问题状态。 |
-| `summary` | 否 | 无 | route `summary` 表示和列表摘要使用的短说明。 |
+| `summary` | 否 | 无 | route `summary` 表示和列表摘要使用的短说明，可包含轻量 Markdown 和 `$...$` 数学公式。 |
 | `priority` | issue 推荐 | issue 默认为 `normal` | issue 的处理优先级。 |
 | `provenance` | 否 | `internal` | 信任边界：内部、外部或导入。 |
 | `tags` | 否 | `[]` | 自由标签，当前主要供搜索和人工整理。 |
@@ -423,7 +423,7 @@ source_result:
 
 ## `summary`
 
-`summary` 是一段短文本，不是 Markdown body 的替代品。它用于：
+`summary` 是一段短文本，不是 Markdown body 的替代品。它可以包含轻量 inline Markdown；数学公式用 `$...$` 或 `$$...$$` 标记后会在网页卡片摘要中渲染。它用于：
 
 - 对象列表和 route 节点摘要。
 - route 导出中的 `summary` representation。
