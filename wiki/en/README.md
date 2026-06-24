@@ -1,6 +1,6 @@
 # Proof Atlas Wiki
 
-[Chinese wiki](../README.md)
+[Chinese wiki](../)
 
 Proof Atlas is a local, file-driven workbench for mathematical object graphs: Markdown stores the prose, YAML stores object metadata and dependency relations, and the local web UI handles browsing, jumps, progressive disclosure, diagnostics, and stable local AI references.
 

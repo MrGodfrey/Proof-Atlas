@@ -31,10 +31,13 @@
   "scripts": {
     "atlas": "tsx src/cli/atlas.ts",
     "build": "tsc -p tsconfig.json && vite build",
-    "build:demo": "npm run demo:data && tsc -p tsconfig.json && vite build --mode demo",
+    "build:demo": "npm run demo:data && tsc -p tsconfig.json && vite build --mode demo && npm run docs:build",
     "demo:data": "tsx src/cli/atlas.ts demo-data examples/semidiscrete/ProofAtlas --output public/demo-data.json",
     "dev": "vite --host 127.0.0.1",
     "dev:demo": "npm run demo:data && vite --host 127.0.0.1 --mode demo",
+    "docs:build": "vitepress build wiki",
+    "docs:dev": "vitepress dev wiki --host 127.0.0.1",
+    "docs:preview": "vitepress preview wiki --host 127.0.0.1",
     "deploy:demo": "npm run build:demo && wrangler pages deploy dist --project-name=proof-atlas-demo",
     "test": "vitest run"
   },
@@ -60,8 +63,10 @@
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",
+    "markdown-it-mathjax3": "^4.3.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
+    "vitepress": "^1.6.4",
     "vitest": "^4.1.8",
     "wrangler": "^4.102.0"
   }

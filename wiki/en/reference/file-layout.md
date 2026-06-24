@@ -51,7 +51,7 @@ Recommended structure:
 
 `npm run atlas -- init <workspace-root>` and `npm run atlas -- doctor <workspace-root>` make sure the paper root `.gitignore` contains local Proof Atlas rules:
 
-```gitignore
+```text
 # Proof Atlas local files.
 ProofAtlas/.atlas/local.yml
 ProofAtlas/.atlas/cache/

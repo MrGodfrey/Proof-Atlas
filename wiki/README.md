@@ -1,6 +1,6 @@
 # Proof Atlas Wiki
 
-[English wiki](en/README.md)
+[English wiki](en/)
 
 Proof Atlas 是一个本地、文件驱动的数学对象图工作台：Markdown 写正文，YAML 写对象元数据和依赖关系，本地网页负责浏览、跳转、渐进披露、校验问题展示和复制本地 AI 可定位的对象引用。
 

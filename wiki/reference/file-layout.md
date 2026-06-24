@@ -52,7 +52,7 @@
 `npm run atlas -- init <workspace-root>` 和 `npm run atlas -- doctor <workspace-root>`
 会确保论文工程根目录的 `.gitignore` 包含 Proof Atlas 本机文件规则：
 
-```gitignore
+```text
 # Proof Atlas local files.
 ProofAtlas/.atlas/local.yml
 ProofAtlas/.atlas/cache/

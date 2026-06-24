@@ -67,7 +67,7 @@ workspace:
 
 `npm run atlas -- init` also adds local file rules to the paper root `.gitignore`:
 
-```gitignore
+```text
 # Proof Atlas local files.
 ProofAtlas/.atlas/local.yml
 ProofAtlas/.atlas/cache/

@@ -2,9 +2,11 @@
 
 **Proof Atlas is a local-first workbench for mathematical research: write proofs in Markdown, describe the proof graph in YAML, and browse the whole project as a clickable atlas.**
 
-[中文 README](README.zh-CN.md) · [English wiki](wiki/en/README.md) · [Changelog](CHANGELOG.md) · [Hosted demo](https://proof-atlas-demo.pages.dev) · [Example project](examples/semidiscrete/ProofAtlas)
+[中文 README](README.zh-CN.md) · [Documentation](https://proof-atlas-demo.pages.dev/wiki/en/) · [Changelog](CHANGELOG.md) · [Hosted demo](https://proof-atlas-demo.pages.dev) · [Example project](examples/semidiscrete/ProofAtlas)
 
 **Try the live demo:** [https://proof-atlas-demo.pages.dev](https://proof-atlas-demo.pages.dev)
+
+**Read the docs:** [https://proof-atlas-demo.pages.dev/wiki/en/](https://proof-atlas-demo.pages.dev/wiki/en/)
 
 Mathematical writing is linear at the end, but research rarely is. A theorem depends on lemmas, a proof is blocked by a gap, a failed route is replaced by a better one, and a citation may support only one fragile estimate. Proof Atlas keeps those relationships explicit while leaving the source of truth as ordinary files that work with Git, editors, and local AI tools.
 
@@ -56,7 +58,7 @@ http://localhost:3217
 
 Open the public Cloudflare Pages demo: [https://proof-atlas-demo.pages.dev](https://proof-atlas-demo.pages.dev)
 
-The demo build is static. `npm run build:demo` first generates `public/demo-data.json` from `examples/semidiscrete/ProofAtlas`, then builds the Vite app in demo mode. GitHub Actions deploys the resulting `dist/` directory to Cloudflare Pages.
+The demo build is static. `npm run build:demo` first generates `public/demo-data.json` from `examples/semidiscrete/ProofAtlas`, builds the Vite app in demo mode, and builds the VitePress documentation site into `dist/wiki`. GitHub Actions deploys the resulting `dist/` directory to Cloudflare Pages.
 
 To enable automatic demo deploys for a fork or new repository:
 
@@ -138,6 +140,8 @@ The `uid` is the permanent identity. The `name` is the readable reference used i
 
 ## Documentation
 
+Browse the hosted documentation site: [https://proof-atlas-demo.pages.dev/wiki/en/](https://proof-atlas-demo.pages.dev/wiki/en/)
+
 - [Wiki home](wiki/en/README.md)
 - [Quick start](wiki/en/guides/quick-start.md)
 - [Concepts and workflows](wiki/en/guides/concepts-and-workflows.md)
@@ -163,6 +167,12 @@ Run the example UI during development:
 
 ```bash
 npm run atlas -- dev examples/semidiscrete/ProofAtlas --port 3217
+```
+
+Run the documentation site locally:
+
+```bash
+npm run docs:dev
 ```
 
 ## Status

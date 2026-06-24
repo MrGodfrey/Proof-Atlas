@@ -67,7 +67,7 @@ workspace:
 
 `npm run atlas -- init` 同时会在论文工程根目录 `.gitignore` 中加入：
 
-```gitignore
+```text
 # Proof Atlas local files.
 ProofAtlas/.atlas/local.yml
 ProofAtlas/.atlas/cache/
