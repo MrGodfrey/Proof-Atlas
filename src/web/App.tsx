@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { ACTIVE_STATUS, STATUS_COLORS } from "../core/constants";
 import { edgeTargets } from "../core/edgeUtils";
+import { formatLocalReference } from "../core/reference";
 import { renderMarkdownBlock } from "../core/render";
 import { deriveRouteProofTree, type ProofTreeNode } from "../core/routeProofTree";
 import { resolveRoute, routeBoundaryKind, type ResolvedRoute, type ResolvedRouteNode, type RouteDiagnostic, type RouteVerificationCounts } from "../core/routeResolver";
@@ -55,6 +56,20 @@ type AppState =
   | { mode: "loading" }
   | { mode: "launcher"; projects: RegistryProjectListItem[] }
   | { mode: "project"; graph: NormalizedGraph };
+
+type DemoProjectPayload = {
+  source_project: string;
+  graph: NormalizedGraph;
+  bodies: BodyCache;
+};
+
+type DemoData = {
+  schema_version: "0.2";
+  generated_at: string;
+  default_project: string;
+  projects: RegistryProjectListItem[];
+  payloads: Record<string, DemoProjectPayload>;
+};
 
 type RouteState =
   | { mode: "view"; viewName: string; focus?: string; side?: string }
@@ -101,6 +116,49 @@ const STATUS_OPTIONS: ObjectStatus[] = [
   "obsolete",
   "archived"
 ];
+const DEMO_MODE = import.meta.env.VITE_PROOF_ATLAS_DEMO === "1";
+let demoDataPromise: Promise<DemoData> | null = null;
+
+async function loadDemoData(): Promise<DemoData> {
+  demoDataPromise ??= fetch("/demo-data.json", { cache: "no-store" }).then(async (response) => {
+    if (!response.ok) throw new Error(`Unable to load demo data: ${response.status}`);
+    return await response.json() as DemoData;
+  });
+  return demoDataPromise;
+}
+
+function normalizeDemoInput(value: string): string {
+  return value.trim().replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+function demoPayloadForInput(data: DemoData, input: string): DemoProjectPayload | undefined {
+  const target = normalizeDemoInput(input);
+  if (!target) return undefined;
+  for (const project of data.projects) {
+    const atlasRoot = normalizeDemoInput(project.atlas_root);
+    const workspaceRoot = project.workspace_root ? normalizeDemoInput(project.workspace_root) : "";
+    const candidates = [
+      project.id,
+      project.title,
+      atlasRoot,
+      workspaceRoot,
+      atlasRoot.endsWith("/ProofAtlas") ? atlasRoot.slice(0, -"/ProofAtlas".length) : ""
+    ].filter(Boolean).map(normalizeDemoInput);
+    if (candidates.some((candidate) => candidate === target)) return data.payloads[project.id];
+    if (project.title.toLowerCase() === target.toLowerCase()) return data.payloads[project.id];
+  }
+  return data.payloads[target];
+}
+
+async function demoAppState(): Promise<AppState> {
+  const data = await loadDemoData();
+  const payload = data.payloads[data.default_project];
+  return payload ? { mode: "project", graph: payload.graph } : { mode: "launcher", projects: data.projects };
+}
+
+async function demoProjects(): Promise<RegistryProjectListItem[]> {
+  return (await loadDemoData()).projects;
+}
 
 function defaultDetailWidth(): number {
   const availableWidth = window.innerWidth - DEFAULT_LEFT_WIDTH;
@@ -231,7 +289,7 @@ function shortName(name: string): string {
 }
 
 function originLabel(object: NormalizedObject): string | undefined {
-  if (object.origin.kind === "global_reference") return object.origin.atlasId ? `global references: ${object.origin.atlasId}` : "global references";
+  if (object.origin.kind === "global_reference") return object.origin.atlasId ? `reference atlas: ${object.origin.atlasId}` : "reference atlas";
   if (object.origin.kind === "mounted_project") return object.origin.atlasId ? `mounted project: ${object.origin.atlasId}` : "mounted project";
   return undefined;
 }
@@ -497,6 +555,10 @@ export default function App() {
   const toastTimer = useRef<number | null>(null);
 
   const refreshState = useCallback(async () => {
+    if (DEMO_MODE) {
+      setAppState(await demoAppState());
+      return;
+    }
     const response = await fetch("/api/state", { cache: "no-store" });
     setAppState(await response.json() as AppState);
   }, []);
@@ -537,6 +599,9 @@ export default function App() {
       setRoute(parseRoute());
     };
     window.addEventListener("popstate", onPop);
+    if (DEMO_MODE) {
+      return () => window.removeEventListener("popstate", onPop);
+    }
     const events = new EventSource("/api/events");
     events.addEventListener("build", (event) => {
       const data = JSON.parse((event as MessageEvent).data) as { type: string; problemCount?: number };
@@ -776,11 +841,17 @@ export default function App() {
 
   const ensureBody = useCallback(async (uid: string) => {
     if (bodyCache[uid]) return;
+    if (DEMO_MODE && graph) {
+      const data = await loadDemoData();
+      const files = data.payloads[graph.config.project]?.bodies[uid] ?? [];
+      setBodyCache((cache) => ({ ...cache, [uid]: files }));
+      return;
+    }
     const response = await fetch(`/api/object/${encodeURIComponent(uid)}/body`, { cache: "no-store" });
     if (!response.ok) return;
     const data = await response.json() as { files: BodyFile[] };
     setBodyCache((cache) => ({ ...cache, [uid]: data.files }));
-  }, [bodyCache]);
+  }, [bodyCache, graph]);
 
   const openPaperViewForObject = useCallback((object: NormalizedObject) => {
     if (!graph) return;
@@ -972,6 +1043,12 @@ export default function App() {
 
   const copyReference = useCallback(async (object: NormalizedObject) => {
     const selection = getSelectionForReference();
+    if (DEMO_MODE && graph) {
+      await copyTextWithToast("Copied local reference", formatLocalReference(graph, object, selection));
+      setCopiedUid(object.uid);
+      setTimeout(() => setCopiedUid(null), 1500);
+      return;
+    }
     const response = await fetch("/api/reference", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -981,9 +1058,27 @@ export default function App() {
     await copyTextWithToast("Copied local reference", data.text);
     setCopiedUid(object.uid);
     setTimeout(() => setCopiedUid(null), 1500);
-  }, [copyTextWithToast]);
+  }, [copyTextWithToast, graph]);
 
   const openProjectFromLauncher = useCallback(async (input: string): Promise<string | undefined> => {
+    if (DEMO_MODE) {
+      const data = await loadDemoData();
+      const payload = demoPayloadForInput(data, input);
+      if (!payload) return `Project not available in this demo: ${input}`;
+      setBodyCache({});
+      setExpanded(new Set());
+      setCollapsed(new Set());
+      setDetailDismissed(false);
+      setProjectOpen(false);
+      setFilterOpen(false);
+      setBuildOpen(false);
+      setCommandOpen(false);
+      setOverlayUid(null);
+      setAppState({ mode: "project", graph: payload.graph });
+      window.history.pushState({}, "", "/");
+      setRoute(parseRoute());
+      return undefined;
+    }
     const response = await fetch("/api/open", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1283,6 +1378,10 @@ function ProjectSwitcher(props: {
   const [error, setError] = useState<string | null>(null);
 
   const refreshProjects = useCallback(async () => {
+    if (DEMO_MODE) {
+      setProjects(await demoProjects());
+      return;
+    }
     const response = await fetch("/api/projects", { cache: "no-store" });
     const data = await response.json() as { projects: RegistryProjectListItem[] };
     setProjects(data.projects ?? []);
@@ -1392,6 +1491,7 @@ function TopBar(props: {
       <span className="project-name" title={props.graph.config.title}>{props.graph.config.title}</span>
       <span className="top-slash">/</span>
       <span className="current-view" title={props.currentLabel}>{props.currentLabel}</span>
+      {DEMO_MODE && <span className="demo-chip" title="Cloudflare-hosted static demo">Cloudflare demo</span>}
       <div className="top-spacer" />
       {props.buildFlash && <span className="build-flash">{props.buildFlash}</span>}
       <ProjectSwitcher
@@ -1495,7 +1595,10 @@ function LeftNav(props: {
   const grouped = useMemo(() => {
     const filter = props.treeFilter.toLowerCase();
     const groups = new Map<string, NormalizedObject[]>();
-    for (const object of props.graph.objects) {
+    const visibleObjects = props.graph.config.atlas_type === "reference"
+      ? props.graph.objects
+      : props.graph.objects.filter((object) => object.origin.kind === "project");
+    for (const object of visibleObjects) {
       if (!shouldShowByFilter(object, props.statusFilter, props.kindFilter, props.showArchived)) continue;
       if (filter && !`${object.name} ${object.title}`.toLowerCase().includes(filter)) continue;
       const group = treeGroupForObject(object);
@@ -1505,8 +1608,11 @@ function LeftNav(props: {
       group,
       objects: objects.sort((a, b) => a.name.localeCompare(b.name))
     }));
-  }, [props.graph.objects, props.kindFilter, props.showArchived, props.statusFilter, props.treeFilter]);
-  const archivedCount = props.graph.objects.filter((object) => ["disproved", "obsolete", "archived"].includes(object.status)).length;
+  }, [props.graph.config.atlas_type, props.graph.objects, props.kindFilter, props.showArchived, props.statusFilter, props.treeFilter]);
+  const objectTabObjects = props.graph.config.atlas_type === "reference"
+    ? props.graph.objects
+    : props.graph.objects.filter((object) => object.origin.kind === "project");
+  const archivedCount = objectTabObjects.filter((object) => ["disproved", "obsolete", "archived"].includes(object.status)).length;
   const viewCount = manualViews.length + generatedViews.length;
   return (
     <aside className="left-nav" style={{ width: props.width, flexBasis: props.width }}>
@@ -1515,7 +1621,7 @@ function LeftNav(props: {
           <span>Views</span><code>{viewCount}</code>
         </button>
         <button className={activeTab === "objects" ? "active" : ""} onClick={() => setActiveTab("objects")}>
-          <span>Objects</span><code>{props.graph.objects.length}</code>
+          <span>Objects</span><code>{objectTabObjects.length}</code>
         </button>
       </div>
       {activeTab === "views" ? (

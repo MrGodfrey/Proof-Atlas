@@ -84,11 +84,10 @@ workspace:
 ```yaml
 references:
   mounts:
-    - id: shared-reference-atlas
-      mode: readonly
+    - id: proof-atlas-example-reference-atlas
 ```
 
-本机路径放入 `ProofAtlas/.atlas/local.yml` 或 `~/.proof-atlas/reference-atlases.yml`，不要提交本机绝对路径。详见 [Reference Atlas 与引用来源](../reference/reference-atlases.md)。
+先用 `npm run atlas -- register <reference-atlas>` 注册 Reference Atlas；mount path 来自 `~/.proof-atlas/projects.yml`，不要提交本机绝对路径。详见 [Reference Atlas 与引用来源](../reference/reference-atlases.md)。
 
 ## 常用 CLI
 

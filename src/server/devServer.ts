@@ -47,16 +47,23 @@ export async function startDevServer(initialProject: ResolvedAtlasProject | unde
   let buildVersion = 0;
   const clients = new Set<import("node:http").ServerResponse>();
   let timer: NodeJS.Timeout | undefined;
+  let refreshingWatcher = false;
 
   const emitBuildEvent = (payload: unknown) => {
     const body = JSON.stringify(payload);
     for (const client of clients) client.write(`event: build\ndata: ${body}\n\n`);
   };
 
-  const rebuild = async (reason: string) => {
+  const rebuild = async (reason: string, refreshWatchSet = false) => {
     if (!currentProject) return;
     try {
       graph = await buildGraph(currentProject);
+      if (refreshWatchSet && !refreshingWatcher) {
+        refreshingWatcher = true;
+        await closeWatcher();
+        watchProject();
+        refreshingWatcher = false;
+      }
       buildVersion += 1;
       emitBuildEvent({
         type: "rebuilt",
@@ -93,6 +100,9 @@ export async function startDevServer(initialProject: ResolvedAtlasProject | unde
       path.join(rootPath, ".atlas", "aliases.yml"),
       path.join(rootPath, ".atlas", "local.yml")
     ]);
+    const bibFiles = Object.values(graph?.bibRegistriesByOwner ?? {})
+      .flatMap((registry) => registry.files.map((file) => file.file));
+    watchPaths.push(...bibFiles);
     watcher = chokidar.watch(watchPaths, {
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 50 }
@@ -101,7 +111,7 @@ export async function startDevServer(initialProject: ResolvedAtlasProject | unde
       clearTimeout(timer);
       timer = setTimeout(() => {
         const ownerRoot = roots.find((rootPath) => changedPath.startsWith(rootPath)) ?? currentProject!.atlasRoot;
-        void rebuild(`${eventName} ${path.relative(ownerRoot, changedPath)}`);
+        void rebuild(`${eventName} ${path.relative(ownerRoot, changedPath)}`, path.basename(changedPath) === "bib-registry.yml");
       }, 180);
     });
   };

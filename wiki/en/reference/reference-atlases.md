@@ -7,7 +7,7 @@ A Reference Atlas is a reusable library of literature and external results. Ordi
 An ordinary paper project is:
 
 ```yaml
-schema_version: "0.1"
+schema_version: "0.2"
 project: semi-discrete-stochastic-control
 title: Semi-discrete stochastic controllability
 default_view: views/dashboard.md
@@ -18,9 +18,9 @@ atlas_type: project
 A Reference Atlas is:
 
 ```yaml
-schema_version: "0.1"
-project: shared-reference-atlas
-title: Shared Reference Atlas
+schema_version: "0.2"
+project: proof-atlas-example-reference-atlas
+title: Proof Atlas Example Reference Atlas
 default_view: views/references.md
 math_renderer: katex
 atlas_type: reference
@@ -35,33 +35,24 @@ A paper project only declares structural dependencies in commit-safe `atlas.yml`
 ```yaml
 references:
   mounts:
-    - id: shared-reference-atlas
-      mode: readonly
+    - id: proof-atlas-example-reference-atlas
 ```
 
-`mode` can be `readonly` or `readwrite`; default usage is read-only. Shared config should not contain local absolute paths.
+Mount entries only accept `id`. All Reference Atlas mounts are read-only; do not write `mode`, `expected_atlas_uid`, or local absolute paths.
 
-Project-local paths can go in `ProofAtlas/.atlas/local.yml`:
+Paths come from the unified project registry. Register the Reference Atlas first:
 
-```yaml
-reference_atlases:
-  shared-reference-atlas:
-    root: ../reference-atlas/ProofAtlas
+```bash
+npm run atlas -- register examples/reference-atlas/ProofAtlas
 ```
 
-They can also go in the user-level registry:
+The registry file is:
 
 ```text
-~/.proof-atlas/reference-atlases.yml
+~/.proof-atlas/projects.yml
 ```
 
-```yaml
-reference_atlases:
-  shared-reference-atlas:
-    root: /path/to/reference-atlas/ProofAtlas
-```
-
-If no registry is available, the resolver also searches upward from the current project for a nearby `reference-atlas/ProofAtlas` and requires that its `atlas.yml` `project` matches the mount id.
+If no registry is available, the public example can still resolve through the nearby `examples/reference-atlas/ProofAtlas` fallback. The resolver still requires exact `atlas.yml.project` equality and `atlas_type: reference`.
 
 ## Bib Registry
 
@@ -120,8 +111,6 @@ role: claim
 display_as: theorem
 title: Partial discrete Lebeau-Robbiano estimate
 provenance: external
-citation:
-  bibkey: Boyer2010
 source_result:
   parent: source.boyer_2010a
   location: Theorem 2.1
@@ -142,17 +131,18 @@ body:
 
 Strict validation checks:
 
-- duplicate mount ids or missing mount paths
+- mount entries containing old `mode` or `expected_atlas_uid` fields
+- duplicate mount ids, more than one mount, or unresolved registry entries
 - `atlas_type` is only `project` or `reference`
 - local `source.*` objects in ordinary projects
-- `source.*` objects missing `citation.bibkey`
-- `citation.bibkey` not found in mounted Bib registries
-- the same BibTeX key appearing in conflicting trust groups
+- non-`source.*` objects in a Reference Atlas
+- `source.<work>` objects missing `citation.bibkey`
+- source claims repeating `citation` instead of deriving it from the parent
+- duplicate BibKey / DOI / arXiv inside one owner registry
 - use of `rejected` citation sources
-- warning when a proof hard-uses an `unverified` external result
-- external claims hard-used by proofs should be exportable as `statement`
+- hard `uses` / `requires` of external source claims must satisfy the accepted-input policy and include `reason`
 
-When a Reference Atlas mount is missing, the system reports `missing_reference_atlas_mount` and avoids reporting the same batch of `source.*` edges and Markdown links as ordinary broken links.
+When a Reference Atlas mount is missing, the system reports `reference_atlas_mount_unresolved` and avoids reporting the same batch of `source.*` edges and Markdown links as ordinary broken links.
 
 ## UI And Export
 
@@ -160,7 +150,7 @@ Mounted objects include origin metadata:
 
 ```text
 global_reference
-origin_atlas: shared-reference-atlas
+origin_atlas: proof-atlas-example-reference-atlas
 ```
 
 The web UI displays origin, bibkey, trust, and `source_result` fidelity on object cards and in the right column. `Copy local AI reference` and route export also include origin/citation metadata so local AI can distinguish "current paper objects" from "external reference objects".

@@ -96,7 +96,7 @@ describe("project path resolver", () => {
 });
 
 describe("project registry", () => {
-  it("deduplicates by atlas root and disambiguates duplicate ids", async () => {
+  it("deduplicates by atlas root and rejects duplicate live ids", async () => {
     const registryPath = path.join(await tempDir("pa-registry-"), "projects.yml");
     const workspaceA = await tempDir("pa-reg-a-");
     const workspaceB = await tempDir("pa-reg-b-");
@@ -111,19 +111,15 @@ describe("project registry", () => {
 
     await registerResolvedProject(resolvedA, { project: "same-id", title: "Project A" }, { registryPath });
     await registerResolvedProject(resolvedA, { project: "same-id", title: "Project A updated" }, { registryPath });
-    const second = await registerResolvedProject(resolvedB, { project: "same-id", title: "Project B" }, { registryPath });
+    await expect(registerResolvedProject(resolvedB, { project: "same-id", title: "Project B" }, { registryPath }))
+      .rejects.toThrow("registry_duplicate_project_id");
 
     const projects = await listRegistryProjects({ registryPath });
-    expect(projects).toHaveLength(2);
+    expect(projects).toHaveLength(1);
     expect(projects.some((item) => item.id === "same-id" && item.title === "Project A updated")).toBe(true);
-    expect(second.entry.id).toBe("same-id-2");
-    expect(second.warning).toContain("same-id");
 
-    await expect(resolveProjectPathOrId("same-id-2", { registryPath })).resolves.toMatchObject({
-      atlasRoot: atlasB
-    });
     expect(await unregisterProject("same-id", { registryPath })).toBe(true);
-    expect(await listRegistryProjects({ registryPath })).toHaveLength(1);
+    expect(await listRegistryProjects({ registryPath })).toHaveLength(0);
   });
 
   it("marks missing registered projects without deleting them", async () => {

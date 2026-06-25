@@ -28,14 +28,11 @@ import type {
   AtlasView,
   AtlasWorkspaceConfig,
   BodyFile,
-  BibRegistryEntry,
-  BibTrust,
   DisplayAs,
   EdgeRef,
   EdgeMap,
   EdgeType,
   IssuePriority,
-  NormalizedBibRegistry,
   NormalizedCitation,
   NormalizedGraph,
   NormalizedObject,
@@ -45,7 +42,6 @@ import type {
   ObjectRole,
   RawObjectRecord,
   ReferenceMountConfig,
-  ReferenceMountMode,
   RepresentationMode,
   ResolvedAtlasProject,
   ResolvedReferenceMount,
@@ -55,6 +51,7 @@ import type {
   ViewItem
 } from "./types";
 import { addUniqueEdge, edgeTargets, hardEdgeTargets } from "./edgeUtils";
+import { loadBibRegistryForRoot } from "./bibtex";
 import { isProofTreeRoot } from "./proofObjects";
 import {
   findForbiddenTexMacros,
@@ -65,7 +62,7 @@ import { findMarkdownRenderIssues } from "./markdownLint";
 import { pathExists, relativePosix, isPlainObject, listFilesRecursive, toPosixPath } from "./pathUtils";
 import { problem, resetProblemCounter } from "./problems";
 import { expandHome, resolveAtlasProject } from "./project";
-import { proofAtlasHome } from "./registry";
+import { readRegistry } from "./registry";
 import { renderMarkdownBlock, splitMarkdownBlocks } from "./render";
 import { readYamlFile } from "./yaml";
 
@@ -229,18 +226,28 @@ function normalizeReferences(raw: unknown, problems: AtlasProblem[], sourcePath:
       }));
       continue;
     }
-    const mode: ReferenceMountMode = item.mode === "readwrite" ? "readwrite" : "readonly";
-    if (item.mode !== undefined && item.mode !== "readonly" && item.mode !== "readwrite") {
+    const keys = Object.keys(item);
+    const extraKeys = keys.filter((key) => key !== "id");
+    if (extraKeys.length) {
       problems.push(problem({
         severity: "error",
-        code: "invalid_reference_mount_mode",
-        message: "references.mounts.mode must be readonly or readwrite.",
+        code: "invalid_reference_mount_field",
+        message: `references.mounts entries only accept id in v1; remove ${extraKeys.join(", ")}.`,
         path: sourcePath,
         target: item.id,
         strict: true
       }));
     }
-    mounts.push({ id: item.id.trim(), mode });
+    mounts.push({ id: item.id.trim() });
+  }
+  if (mounts.length > 1) {
+    problems.push(problem({
+      severity: "error",
+      code: "too_many_reference_mounts",
+      message: "v1 supports at most one Reference Atlas mount.",
+      path: sourcePath,
+      strict: true
+    }));
   }
   return { mounts };
 }
@@ -256,13 +263,13 @@ function mergeLocalConfig(config: AtlasConfig, raw: unknown, problems: AtlasProb
     }));
     return config;
   }
-  const allowed = new Set(["workspace", "reference_atlases"]);
+  const allowed = new Set(["workspace"]);
   for (const key of Object.keys(raw)) {
     if (allowed.has(key)) continue;
     problems.push(problem({
       severity: "error",
       code: "invalid_local_override",
-      message: `.atlas/local.yml may not override ${key}; only workspace path fields and reference_atlases are local.`,
+      message: `.atlas/local.yml may not override ${key}; only workspace path fields are local.`,
       path: ".atlas/local.yml",
       strict: true
     }));
@@ -292,19 +299,6 @@ function resolveWorkspaceFile(atlasRoot: string, workspaceRoot: string | null, v
   return path.resolve(atlasRoot, expanded);
 }
 
-function defaultReferenceAtlasRegistryPath(): string {
-  return path.join(proofAtlasHome(), "reference-atlases.yml");
-}
-
-function resolveConfigPath(baseRoot: string, value: string): string {
-  const expanded = expandHome(value);
-  return path.isAbsolute(expanded) ? path.normalize(expanded) : path.resolve(baseRoot, expanded);
-}
-
-function safeMapping(value: unknown): Record<string, unknown> | undefined {
-  return isPlainObject(value) ? value : undefined;
-}
-
 async function safeRealpath(filePath: string): Promise<string> {
   try {
     return await fs.realpath(filePath);
@@ -313,58 +307,22 @@ async function safeRealpath(filePath: string): Promise<string> {
   }
 }
 
-async function readReferenceAtlasMappings(project: ResolvedAtlasProject, problems: AtlasProblem[]): Promise<Record<string, string>> {
-  const mappings: Record<string, string> = {};
-  const readMappings = async (filePath: string, baseRoot: string, required: boolean) => {
-    if (!(await pathExists(filePath))) {
-      if (required) {
-        problems.push(problem({
-          severity: "error",
-          code: "missing_reference_atlas_registry",
-          message: `Reference atlas registry does not exist: ${filePath}.`,
-          path: filePath,
-          strict: true
-        }));
-      }
-      return;
-    }
-    const raw = await readYamlFile<unknown>(filePath);
-    const rootMap = safeMapping(raw)?.reference_atlases;
-    if (rootMap === undefined) return;
-    if (!isPlainObject(rootMap)) {
-      problems.push(problem({
-        severity: "error",
-        code: "invalid_reference_atlas_registry",
-        message: "reference_atlases must be a YAML mapping of id to root.",
-        path: filePath,
-        strict: true
-      }));
-      return;
-    }
-    for (const [id, entry] of Object.entries(rootMap)) {
-      const root = typeof entry === "string"
-        ? entry
-        : isPlainObject(entry) && typeof entry.root === "string"
-          ? entry.root
-          : undefined;
-      if (!root?.trim()) {
-        problems.push(problem({
-          severity: "error",
-          code: "invalid_reference_atlas_root",
-          message: `reference_atlases.${id}.root must be a non-empty string.`,
-          path: filePath,
-          target: id,
-          strict: true
-        }));
-        continue;
-      }
-      mappings[id] = resolveConfigPath(baseRoot, root);
-    }
-  };
-
-  await readMappings(defaultReferenceAtlasRegistryPath(), process.cwd(), false);
-  if (project.localConfigPath) await readMappings(project.localConfigPath, project.atlasRoot, false);
-  return mappings;
+async function rootFromProjectRegistry(id: string, problems: AtlasProblem[]): Promise<string | undefined> {
+  try {
+    const registry = await readRegistry();
+    const entry = registry.recent.find((item) => item.id === id);
+    return entry?.atlas_root;
+  } catch (error) {
+    problems.push(problem({
+      severity: "error",
+      code: "registry_entry_invalid",
+      message: error instanceof Error ? error.message : String(error),
+      path: "~/.proof-atlas/projects.yml",
+      target: id,
+      strict: true
+    }));
+    return undefined;
+  }
 }
 
 async function findNearbyReferenceAtlas(projectRoot: string, id: string): Promise<string | undefined> {
@@ -390,7 +348,16 @@ async function resolveReferenceMounts(
 ): Promise<ResolvedReferenceMount[]> {
   const requested = config.references?.mounts ?? [];
   if (requested.length === 0) return [];
-  const mappings = await readReferenceAtlasMappings(project, problems);
+  if (config.atlas_type === "reference") {
+    problems.push(problem({
+      severity: "error",
+      code: "reference_atlas_mount_forbidden",
+      message: "Reference Atlas projects cannot mount another Reference Atlas in v1.",
+      path: "atlas.yml",
+      strict: true
+    }));
+    return [];
+  }
   const mounts: ResolvedReferenceMount[] = [];
   const seen = new Set<string>();
   for (const mount of requested) {
@@ -406,18 +373,18 @@ async function resolveReferenceMounts(
       continue;
     }
     seen.add(mount.id);
-    const root = mappings[mount.id] ?? await findNearbyReferenceAtlas(project.atlasRoot, mount.id);
+    const root = await rootFromProjectRegistry(mount.id, problems) ?? await findNearbyReferenceAtlas(project.atlasRoot, mount.id);
     if (!root) {
-      const message = `Project declares reference atlas ${mount.id}, but no local path mapping was found.`;
+      const message = `Project declares Reference Atlas ${mount.id}, but it is not registered in ~/.proof-atlas/projects.yml.`;
       problems.push(problem({
         severity: "error",
-        code: "missing_reference_atlas_mount",
+        code: "reference_atlas_mount_unresolved",
         message,
         path: "atlas.yml",
         target: mount.id,
         strict: true
       }));
-      mounts.push({ id: mount.id, mode: mount.mode, root: null, realRoot: null, status: "missing", message });
+      mounts.push({ id: mount.id, root: null, realRoot: null, status: "missing", message });
       continue;
     }
     const atlasFile = path.join(root, "atlas.yml");
@@ -425,18 +392,51 @@ async function resolveReferenceMounts(
       const message = `Reference atlas ${mount.id} does not contain atlas.yml at ${root}.`;
       problems.push(problem({
         severity: "error",
-        code: "missing_reference_atlas_mount",
+        code: "reference_atlas_mount_unresolved",
         message,
         path: "atlas.yml",
         target: mount.id,
         strict: true
       }));
-      mounts.push({ id: mount.id, mode: mount.mode, root, realRoot: await safeRealpath(root), status: "missing", message });
+      mounts.push({ id: mount.id, root, realRoot: await safeRealpath(root), status: "missing", message });
       continue;
     }
     const realRoot = await safeRealpath(root);
-    if (realRoot === project.realAtlasRoot) continue;
-    mounts.push({ id: mount.id, mode: mount.mode, root, realRoot, status: "mounted" });
+    if (realRoot === project.realAtlasRoot) {
+      problems.push(problem({
+        severity: "error",
+        code: "reference_atlas_self_mount",
+        message: `Project cannot mount itself as Reference Atlas ${mount.id}.`,
+        path: "atlas.yml",
+        target: mount.id,
+        strict: true
+      }));
+      continue;
+    }
+    const targetRaw = await readYamlFile<unknown>(atlasFile);
+    if (!isPlainObject(targetRaw) || targetRaw.project !== mount.id) {
+      problems.push(problem({
+        severity: "error",
+        code: "reference_atlas_project_mismatch",
+        message: `Mounted atlas project must equal mount id ${mount.id}.`,
+        path: atlasFile,
+        target: mount.id,
+        strict: true
+      }));
+      continue;
+    }
+    if (targetRaw.atlas_type !== "reference") {
+      problems.push(problem({
+        severity: "error",
+        code: "reference_atlas_not_reference_type",
+        message: `Mounted atlas ${mount.id} must set atlas_type: reference.`,
+        path: atlasFile,
+        target: mount.id,
+        strict: true
+      }));
+      continue;
+    }
+    mounts.push({ id: mount.id, root, realRoot, status: "mounted" });
   }
   return mounts;
 }
@@ -456,7 +456,7 @@ async function loadConfig(project: ResolvedAtlasProject, problems: AtlasProblem[
   const raw = await readYamlFile<Record<string, unknown>>(project.configPath);
   const fallbackProject = path.basename(path.dirname(project.atlasRoot)) || "proof-atlas";
   const config: AtlasConfig = {
-    schema_version: "0.1",
+    schema_version: "0.2",
     project: typeof raw?.project === "string" ? raw.project : fallbackProject,
     title: typeof raw?.title === "string" ? raw.title : fallbackProject,
     default_view: normalizeDefaultView(raw?.default_view),
@@ -485,11 +485,11 @@ async function loadConfig(project: ResolvedAtlasProject, problems: AtlasProblem[
       }));
     }
   }
-  if (raw.schema_version !== "0.1") {
+  if (raw.schema_version !== "0.2") {
     problems.push(problem({
       severity: "error",
       code: "invalid_schema_version",
-      message: `schema_version must be "0.1".`,
+      message: `atlas.yml schema_version must be "0.2"; atlas/object protocol 0.1 is no longer loaded by this version.`,
       path: "atlas.yml",
       strict: true
     }));
@@ -523,6 +523,7 @@ async function loadConfig(project: ResolvedAtlasProject, problems: AtlasProblem[
 
 interface LoadRoot {
   root: string;
+  ownerProject: string;
   originKind: ObjectOrigin["kind"];
   atlasId?: string;
   readonly: boolean;
@@ -1002,6 +1003,7 @@ function normalizeObject(
     kind: loadRoot.originKind,
     atlasRoot: root,
     ...(loadRoot.atlasId ? { atlasId: loadRoot.atlasId } : {}),
+    ownerProject: loadRoot.ownerProject,
     objectPath,
     readonly: loadRoot.readonly
   };
@@ -1831,143 +1833,188 @@ function statusComboWarning(object: NormalizedObject): string | undefined {
   return undefined;
 }
 
-const BIB_TRUST_GROUPS: BibTrust[] = ["trusted", "unverified", "rejected"];
+const SOURCE_ROOT_PATTERN = /^source\.([a-z][a-z0-9_]*)$/;
+const SOURCE_CLAIM_PATTERN = /^source\.([a-z][a-z0-9_]*)\.claim\.([a-z][a-z0-9_]*)$/;
+const SOURCE_FIDELITY = new Set(["verbatim", "paraphrased", "adapted"]);
 
-function parseBibEntries(source: string): Array<{ bibkey: string; entryType: string }> {
-  const entries: Array<{ bibkey: string; entryType: string }> = [];
-  const pattern = /@([A-Za-z]+)\s*\{\s*([^,\s]+)\s*,/g;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(source)) !== null) {
-    entries.push({ entryType: match[1], bibkey: match[2] });
-  }
-  return entries;
+function sourceRootMatch(name: string): RegExpExecArray | null {
+  return SOURCE_ROOT_PATTERN.exec(name);
 }
 
-function normalizeBibRegistryFiles(raw: unknown, trust: BibTrust, registryPath: string, problems: AtlasProblem[]): Array<{ id: string; path: string }> {
-  if (raw === undefined) return [];
-  if (!Array.isArray(raw)) {
-    problems.push(problem({
-      severity: "error",
-      code: "invalid_bib_registry_group",
-      message: `bib-registry.yml ${trust} must be a list.`,
-      path: registryPath,
-      strict: true
-    }));
-    return [];
-  }
-  return raw.flatMap((item, index) => {
-    if (typeof item === "string" && item.trim()) {
-      return [{ id: `${trust}-${index + 1}`, path: item.trim() }];
+function sourceClaimMatch(name: string): RegExpExecArray | null {
+  return SOURCE_CLAIM_PATTERN.exec(name);
+}
+
+function sourceProblemPath(object: NormalizedObject): string {
+  return object.origin.kind === "project" ? object.objectPath : `[${object.origin.ownerProject}] ${object.objectPath}`;
+}
+
+function validateSourceStructure(graph: NormalizedGraph): void {
+  for (const object of graph.objects) {
+    if (!object.name.startsWith("source.")) continue;
+    const rootMatch = sourceRootMatch(object.name);
+    const claimMatch = sourceClaimMatch(object.name);
+
+    if (rootMatch) {
+      if (object.kind !== "note" || object.role !== "literature") {
+        graph.problems.push(problem({
+          severity: "error",
+          code: "invalid_source_root_shape",
+          message: `${object.name} must be note.literature.`,
+          path: sourceProblemPath(object),
+          objectUid: object.uid,
+          objectName: object.name,
+          strict: true
+        }));
+      }
+      if (!object.citation?.bibkey) {
+        graph.problems.push(problem({
+          severity: "error",
+          code: "missing_source_root_bibkey",
+          message: `${object.name} needs citation.bibkey.`,
+          path: sourceProblemPath(object),
+          objectUid: object.uid,
+          objectName: object.name,
+          strict: true
+        }));
+      }
+      continue;
     }
-    if (!isPlainObject(item) || typeof item.path !== "string" || !item.path.trim()) {
-      problems.push(problem({
+
+    if (!claimMatch) {
+      graph.problems.push(problem({
         severity: "error",
-        code: "invalid_bib_registry_file",
-        message: `bib-registry.yml ${trust} entries need a path.`,
-        path: registryPath,
+        code: "invalid_source_name",
+        message: `${object.name} must be source.<work> or source.<work>.claim.<result>.`,
+        path: sourceProblemPath(object),
+        objectUid: object.uid,
+        objectName: object.name,
         strict: true
       }));
-      return [];
+      continue;
     }
-    return [{
-      id: typeof item.id === "string" && item.id.trim() ? item.id.trim() : `${trust}-${index + 1}`,
-      path: item.path.trim()
-    }];
-  });
+
+    if (object.kind !== "math" || object.role !== "claim") {
+      graph.problems.push(problem({
+        severity: "error",
+        code: "invalid_source_claim_shape",
+        message: `${object.name} must be math.claim.`,
+        path: sourceProblemPath(object),
+        objectUid: object.uid,
+        objectName: object.name,
+        strict: true
+      }));
+    }
+    if (object.citation) {
+      graph.problems.push(problem({
+        severity: "error",
+        code: "source_claim_citation_forbidden",
+        message: `${object.name} must derive citation.bibkey from source_result.parent instead of repeating citation.`,
+        path: sourceProblemPath(object),
+        objectUid: object.uid,
+        objectName: object.name,
+        strict: true
+      }));
+    }
+    const parentName = object.source_result?.parent;
+    if (!parentName) {
+      graph.problems.push(problem({
+        severity: "error",
+        code: "missing_source_result_parent",
+        message: `${object.name} needs source_result.parent.`,
+        path: sourceProblemPath(object),
+        objectUid: object.uid,
+        objectName: object.name,
+        strict: true
+      }));
+      continue;
+    }
+    const parent = graph.objectsByName[parentName];
+    if (!parent) {
+      graph.problems.push(problem({
+        severity: "error",
+        code: "missing_source_result_parent",
+        message: `${object.name} declares source_result.parent ${parentName}, but it does not exist.`,
+        path: sourceProblemPath(object),
+        objectUid: object.uid,
+        objectName: object.name,
+        target: parentName,
+        strict: true
+      }));
+      continue;
+    }
+    if (parent.origin.ownerProject !== object.origin.ownerProject) {
+      graph.problems.push(problem({
+        severity: "error",
+        code: "cross_owner_source_parent",
+        message: `${object.name} source_result.parent must be in the same owner atlas.`,
+        path: sourceProblemPath(object),
+        objectUid: object.uid,
+        objectName: object.name,
+        target: parent.name,
+        strict: true
+      }));
+    }
+    const parentMatch = sourceRootMatch(parent.name);
+    if (!parentMatch || parent.kind !== "note" || parent.role !== "literature") {
+      graph.problems.push(problem({
+        severity: "error",
+        code: "invalid_source_result_parent",
+        message: `${object.name} source_result.parent must point to a source.<work> literature root.`,
+        path: sourceProblemPath(object),
+        objectUid: object.uid,
+        objectName: object.name,
+        target: parent.name,
+        strict: true
+      }));
+    } else if (claimMatch[1] !== parentMatch[1]) {
+      graph.problems.push(problem({
+        severity: "error",
+        code: "source_claim_parent_prefix_mismatch",
+        message: `${object.name} work prefix must match source_result.parent ${parent.name}.`,
+        path: sourceProblemPath(object),
+        objectUid: object.uid,
+        objectName: object.name,
+        target: parent.name,
+        strict: true
+      }));
+    }
+    const fidelity = object.source_result?.statement_fidelity;
+    if (fidelity !== undefined && !SOURCE_FIDELITY.has(fidelity)) {
+      graph.problems.push(problem({
+        severity: "error",
+        code: "invalid_statement_fidelity",
+        message: `statement_fidelity must be verbatim, paraphrased, or adapted.`,
+        path: sourceProblemPath(object),
+        objectUid: object.uid,
+        objectName: object.name,
+        target: fidelity,
+        strict: true
+      }));
+    }
+  }
 }
 
-async function loadBibRegistryForRoot(loadRoot: LoadRoot, problems: AtlasProblem[]): Promise<NormalizedBibRegistry> {
-  const registryPath = path.join(loadRoot.root, "bib-registry.yml");
-  const entriesByKey: Record<string, BibRegistryEntry> = {};
-  if (!(await pathExists(registryPath))) return { entriesByKey };
-  const raw = await readYamlFile<unknown>(registryPath);
-  if (!isPlainObject(raw)) {
-    problems.push(problem({
-      severity: "error",
-      code: "invalid_bib_registry",
-      message: "bib-registry.yml must be a YAML mapping.",
-      path: "bib-registry.yml",
-      strict: true
-    }));
-    return { entriesByKey };
+function deriveSourceClaimCitations(graph: NormalizedGraph): void {
+  for (const object of graph.objects) {
+    if (!sourceClaimMatch(object.name)) continue;
+    const parent = object.source_result?.parent ? graph.objectsByName[object.source_result.parent] : undefined;
+    if (!parent?.citation?.bibkey) continue;
+    object.citation = { bibkey: parent.citation.bibkey };
   }
-  for (const trust of BIB_TRUST_GROUPS) {
-    for (const fileRef of normalizeBibRegistryFiles(raw[trust], trust, registryPath, problems)) {
-      const filePath = resolveConfigPath(loadRoot.root, fileRef.path);
-      if (!(await pathExists(filePath))) {
-        problems.push(problem({
-          severity: "error",
-          code: "missing_bib_registry_file",
-          message: `Bib registry file ${fileRef.path} does not exist.`,
-          path: "bib-registry.yml",
-          target: fileRef.id,
-          strict: true
-        }));
-        continue;
-      }
-      const source = await fs.readFile(filePath, "utf8");
-      for (const entry of parseBibEntries(source)) {
-        const existing = entriesByKey[entry.bibkey];
-        if (existing && existing.trust !== trust) {
-          problems.push(problem({
-            severity: "error",
-            code: "duplicate_bibkey_trust",
-            message: `BibTeX key ${entry.bibkey} appears in both ${existing.trust} and ${trust}.`,
-            path: "bib-registry.yml",
-            target: entry.bibkey,
-            strict: true
-          }));
-          continue;
-        }
-        if (existing) {
-          continue;
-        }
-        entriesByKey[entry.bibkey] = {
-          bibkey: entry.bibkey,
-          trust,
-          file: filePath,
-          registryId: loadRoot.atlasId ?? "project",
-          registryPath,
-          entryType: entry.entryType
-        };
-      }
-    }
-  }
-  return { entriesByKey };
-}
-
-async function loadCompositeBibRegistry(loadRoots: LoadRoot[], problems: AtlasProblem[]): Promise<NormalizedBibRegistry> {
-  const entriesByKey: Record<string, BibRegistryEntry> = {};
-  for (const loadRoot of loadRoots) {
-    const registry = await loadBibRegistryForRoot(loadRoot, problems);
-    for (const [bibkey, entry] of Object.entries(registry.entriesByKey)) {
-      const existing = entriesByKey[bibkey];
-      if (existing && existing.trust !== entry.trust) {
-        problems.push(problem({
-          severity: "error",
-          code: "duplicate_bibkey_trust",
-          message: `BibTeX key ${bibkey} appears with conflicting trust in mounted registries.`,
-          path: entry.registryPath,
-          target: bibkey,
-          strict: true
-        }));
-        continue;
-      }
-      entriesByKey[bibkey] = existing ?? entry;
-    }
-  }
-  return { entriesByKey };
 }
 
 function applyCitationRegistry(graph: NormalizedGraph): void {
   for (const object of graph.objects) {
     if (!object.citation) continue;
-    const entry = graph.bibRegistry.entriesByKey[object.citation.bibkey];
+    const ownerProject = object.origin.ownerProject;
+    const registry = graph.bibRegistriesByOwner[ownerProject];
+    const entry = registry?.entriesByKey[object.citation.bibkey];
     if (!entry) {
       graph.problems.push(problem({
         severity: "error",
         code: "missing_citation_bibkey",
-        message: `${object.name} cites BibTeX key ${object.citation.bibkey}, but that key is not in the mounted bib registry.`,
+        message: `[${ownerProject}] ${object.name} cites BibTeX key ${object.citation.bibkey}, but that key is not in the owner Bib registry.`,
         path: object.objectPath,
         objectUid: object.uid,
         objectName: object.name,
@@ -1977,6 +2024,7 @@ function applyCitationRegistry(graph: NormalizedGraph): void {
       continue;
     }
     object.citation = {
+      ownerProject,
       bibkey: object.citation.bibkey,
       trust: entry.trust,
       bibfile: entry.file,
@@ -1988,6 +2036,17 @@ function applyCitationRegistry(graph: NormalizedGraph): void {
 
 function lintGraph(graph: NormalizedGraph): void {
   for (const object of graph.objects) {
+    if (graph.config.atlas_type === "reference" && object.origin.kind === "project" && !object.name.startsWith("source.")) {
+      graph.problems.push(problem({
+        severity: "error",
+        code: "reference_atlas_object_namespace",
+        message: `${object.name} is not allowed in a Reference Atlas v1; use source.<work> or source.<work>.claim.<result>.`,
+        path: object.objectPath,
+        objectUid: object.uid,
+        objectName: object.name,
+        strict: true
+      }));
+    }
     if (object.name.startsWith("source.") && object.origin.kind === "project" && graph.config.atlas_type !== "reference") {
       graph.problems.push(problem({
         severity: "error",
@@ -1999,7 +2058,7 @@ function lintGraph(graph: NormalizedGraph): void {
         strict: true
       }));
     }
-    if (object.name.startsWith("source.") && !object.citation) {
+    if (sourceRootMatch(object.name) && !object.citation) {
       graph.problems.push(problem({
         severity: "error",
         code: "missing_citation",
@@ -2007,18 +2066,6 @@ function lintGraph(graph: NormalizedGraph): void {
         path: object.objectPath,
         objectUid: object.uid,
         objectName: object.name,
-        strict: true
-      }));
-    }
-    if (object.source_result?.parent && !graph.objectsByName[object.source_result.parent]) {
-      graph.problems.push(problem({
-        severity: "error",
-        code: "missing_source_result_parent",
-        message: `${object.name} declares source_result.parent ${object.source_result.parent}, but it does not exist.`,
-        path: object.objectPath,
-        objectUid: object.uid,
-        objectName: object.name,
-        target: object.source_result.parent,
         strict: true
       }));
     }
@@ -2103,13 +2150,38 @@ function lintGraph(graph: NormalizedGraph): void {
       }
     }
     for (const edgeType of EDGE_TYPES) {
-      for (const targetName of edgeTargets(object.edges[edgeType])) {
-        const target = graph.objectsByName[targetName];
+      const refs = object.edges[edgeType] ?? [];
+      for (const ref of refs) {
+        const target = graph.objectsByName[ref.target];
         if (target?.citation?.trust === "rejected") {
           graph.problems.push(problem({
             severity: "error",
             code: "rejected_citation_usage",
             message: `${object.name} ${edgeType} rejected reference ${target.name}.`,
+            path: object.objectPath,
+            objectUid: object.uid,
+            objectName: object.name,
+            target: target.name,
+            strict: true
+          }));
+        }
+        if (edgeType === "cites" && target?.citation?.trust === "unverified") {
+          graph.problems.push(problem({
+            severity: "warning",
+            code: "unverified_citation",
+            message: `${object.name} cites unverified reference ${target.name}.`,
+            path: object.objectPath,
+            objectUid: object.uid,
+            objectName: object.name,
+            target: target.name,
+            strict: false
+          }));
+        }
+        if ((edgeType === "uses" || edgeType === "requires") && ref.strength === "hard" && target && sourceClaimMatch(target.name) && !ref.reason?.trim()) {
+          graph.problems.push(problem({
+            severity: "error",
+            code: "missing_external_dependency_reason",
+            message: `${object.name} hard-${edgeType} external source claim ${target.name} without reason.`,
             path: object.objectPath,
             objectUid: object.uid,
             objectName: object.name,
@@ -2203,6 +2275,7 @@ export async function buildGraph(projectInput?: string | ResolvedAtlasProject): 
   const referenceMounts = await resolveReferenceMounts(project, config, problems);
   const projectLoadRoot: LoadRoot = {
     root,
+    ownerProject: config.project,
     originKind: "project",
     readonly: false
   };
@@ -2210,9 +2283,10 @@ export async function buildGraph(projectInput?: string | ResolvedAtlasProject): 
     .filter((mount): mount is ResolvedReferenceMount & { root: string } => mount.status === "mounted" && Boolean(mount.root))
     .map((mount) => ({
       root: mount.root,
+      ownerProject: mount.id,
       originKind: "global_reference",
       atlasId: mount.id,
-      readonly: mount.mode === "readonly"
+      readonly: true
     }));
   const loadRoots = [projectLoadRoot, ...mountedLoadRoots];
   const rawObjectsByRoot = await Promise.all(loadRoots.map((loadRoot) => loadRawObjects(loadRoot)));
@@ -2231,7 +2305,16 @@ export async function buildGraph(projectInput?: string | ResolvedAtlasProject): 
   duplicateProblems(objects, problems);
   const objectsByUid = Object.fromEntries(objects.map((object) => [object.uid, object]));
   const objectsByName = Object.fromEntries(objects.map((object) => [object.name, object]));
-  const bibRegistry = await loadCompositeBibRegistry(loadRoots, problems);
+  const bibRegistryEntries = await Promise.all(loadRoots.map((loadRoot) => (
+    loadBibRegistryForRoot(loadRoot.root, loadRoot.ownerProject, problems)
+  )));
+  const bibRegistriesByOwner = Object.fromEntries(bibRegistryEntries.map((registry) => [registry.ownerProject, registry]));
+  const bibRegistry = bibRegistriesByOwner[config.project] ?? {
+    ownerProject: config.project,
+    registryPath: null,
+    entriesByKey: {},
+    files: []
+  };
   const graph: NormalizedGraph = {
     root,
     atlasRoot: root,
@@ -2249,9 +2332,12 @@ export async function buildGraph(projectInput?: string | ResolvedAtlasProject): 
     problems,
     referenceMounts,
     bibRegistry,
+    bibRegistriesByOwner,
     builtAt: new Date().toISOString()
   };
   graph.aliases = await loadAllAliases(loadRoots, graph, problems);
+  validateSourceStructure(graph);
+  deriveSourceClaimCitations(graph);
   applyCitationRegistry(graph);
   validateBodyPathsAndContent(graph);
   validateAndResolveEdges(graph);

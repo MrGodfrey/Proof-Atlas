@@ -564,6 +564,70 @@ describe("generated routes", () => {
     expect(snapshot.markdown).not.toContain("content_included:");
     expect(snapshot.markdown).not.toMatch(/!?\[\[/);
     expect(snapshot.diagnostics).toEqual([]);
+    expect(snapshot.repositories.map((repo) => repo.project)).toContain("semi-discrete-stochastic-control");
+    expect(typeof snapshot.reproducible).toBe("boolean");
+  });
+
+  it("does not accept source claims that are structurally valid but not checked", async () => {
+    const root = await tempDir("pa-external-policy-");
+    const project = await writeTestProject(root, [
+      {
+        object: {
+          uid: "obj_20260625_src1",
+          name: "source.paper",
+          kind: "note",
+          role: "literature",
+          title: "Paper",
+          body: ["note.md"],
+          provenance: "external",
+          citation: { bibkey: "Paper2026" }
+        },
+        bodies: { "note.md": "Paper note.\n" }
+      },
+      {
+        object: {
+          uid: "obj_20260625_src2",
+          name: "source.paper.claim.result",
+          kind: "math",
+          role: "claim",
+          title: "External Result",
+          body: ["statement.md"],
+          provenance: "external",
+          status: "needs_check",
+          source_result: {
+            parent: "source.paper",
+            location: "Theorem 1",
+            statement_fidelity: "paraphrased"
+          }
+        },
+        bodies: { "statement.md": "External statement.\n" }
+      }
+    ], {
+      atlas: {
+        project: "external-policy-reference",
+        atlas_type: "reference"
+      },
+      views: { "paper.md": "# References\n\n![[source.paper.claim.result]]\n" }
+    });
+    await fs.writeFile(path.join(project, "references.bib"), "@Article{Paper2026, title={Paper}, year={2026}}\n", "utf8");
+    await fs.writeFile(path.join(project, "bib-registry.yml"), [
+      'schema_version: "0.1"',
+      "trusted:",
+      "  - id: trusted",
+      "    path: references.bib",
+      ""
+    ].join("\n"), "utf8");
+
+    const graph = await buildGraph(project);
+    const route = resolveRoute(graph, {
+      target: "source.paper.claim.result",
+      profile: "proof"
+    });
+
+    expect(route.nodes.find((node) => node.object.name === "source.paper.claim.result")?.decision).toBe("unresolved");
+    expect(route.status.acceptedInputs).toEqual([]);
+    expect(route.status.exportReadiness).toBe("incomplete");
+    expect(route.diagnostics.map((item) => item.code)).toContain("external_input_needs_check");
   });
 
   it("uses route render.order_hints when linearizing same-layer nodes", async () => {

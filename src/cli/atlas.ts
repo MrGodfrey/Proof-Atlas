@@ -9,6 +9,7 @@ import {
   NAME_PATTERN,
   UID_PATTERN
 } from "../core/constants";
+import { appendBibEntryToUnverified, BibError, loadBibRegistryForRoot, parseSingleBibEntry } from "../core/bibtex";
 import { buildBodyFiles, buildGraph, findObject } from "../core/graph";
 import { exportRoute, createSnapshot, type ExportFormat } from "../core/contextExporter";
 import { edgeTargets } from "../core/edgeUtils";
@@ -34,6 +35,7 @@ import {
   type EdgeRef,
   type ObjectKind,
   type ObjectRole,
+  type RegistryProjectListItem,
   type RepresentationMode,
   type RouteProfile,
   type RouteView,
@@ -282,15 +284,21 @@ export async function commandRename(oldName: string, newName: string, options: {
   const graph = await buildGraph(project);
   const object = findObject(graph, oldName);
   if (!object) cliError(`Object not found: ${oldName}`, 1);
+  if (object.origin.kind !== "project" || object.origin.readonly) {
+    cliError(`Mounted objects are readonly. Open the owner atlas to edit: ${object.name}`, 1);
+  }
+  if (object.name.startsWith("source.") && graph.objects.some((item) => item.source_result?.parent === object.name)) {
+    cliError(`Cannot rename ${object.name}: source roots with child claims require a manual data rewrite.`, 1);
+  }
   if (graph.objectsByName[newName]) cliError(`Target object name already exists: ${newName}`, 1);
 
-  const objectFiles = graph.objects.map((item) => path.join(root, item.objectPath));
+  const objectFiles = await listFilesRecursive(path.join(root, "objects"), (file) => path.basename(file) === "object.yml");
   for (const file of objectFiles) await rewriteObjectYaml(file, oldName, newName);
   const routeFiles = await listFilesRecursive(path.join(root, "views"), (file) => /\.route\.ya?ml$/.test(file));
   for (const file of routeFiles) await rewriteRouteYaml(file, oldName, newName);
 
   const markdownFiles = [
-    ...graph.objects.flatMap((item) => item.body.map((body) => path.join(root, item.dir, body))),
+    ...(await listFilesRecursive(path.join(root, "objects"), (file) => file.endsWith(".md"))),
     ...(await listFilesRecursive(path.join(root, "views"), (file) => file.endsWith(".md")))
   ];
   await rewriteMarkdownFiles(markdownFiles.filter((file, index, list) => list.indexOf(file) === index), oldName, newName);
@@ -479,6 +487,7 @@ export async function commandExport(routeFile: string, project: string | undefin
   format?: string;
   output?: string;
   snapshot?: string;
+  requireClean?: boolean;
 }): Promise<void> {
   const graph = await buildGraph(project);
   const recipe = await loadRouteRecipe(graph, routeFile);
@@ -499,7 +508,7 @@ export async function commandExport(routeFile: string, project: string | undefin
       ? path.normalize(expandHome(options.snapshot))
       : path.resolve(graph.root, expandHome(options.snapshot));
     await fs.mkdir(path.dirname(snapshotPath), { recursive: true });
-    await writeYamlFile(snapshotPath, await createSnapshot(graph, recipe, resolved));
+    await writeYamlFile(snapshotPath, await createSnapshot(graph, recipe, resolved, { requireClean: Boolean(options.requireClean) }));
     console.log(`Wrote snapshot ${snapshotPath}`);
   }
   if (result.diagnostics.length && options.output) {
@@ -510,8 +519,67 @@ export async function commandExport(routeFile: string, project: string | undefin
 function compactDemoPath(repoRoot: string, value: string): string {
   if (!path.isAbsolute(value)) return value.split(path.sep).join("/");
   const relative = path.relative(repoRoot, value);
-  if (!relative.startsWith("..") && !path.isAbsolute(relative)) return relative ? relative.split(path.sep).join("/") : ".";
+  if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) return relative.split(path.sep).join("/");
+  if (!relative) return ".";
   return value.split(path.sep).join("/");
+}
+
+function isWithinDirectory(parent: string, child: string): boolean {
+  const relative = path.relative(parent, child);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+async function realpathIfPossible(filePath: string): Promise<string> {
+  try {
+    return await fs.realpath(filePath);
+  } catch {
+    return filePath;
+  }
+}
+
+async function assertDemoMountPolicy(graph: Awaited<ReturnType<typeof buildGraph>>, repoRoot: string, includeMounted: boolean): Promise<void> {
+  const mounted = graph.referenceMounts.filter((mount) => mount.status === "mounted" && mount.root);
+  if (mounted.length === 0) return;
+  if (!includeMounted) {
+    throw new Error("demo-data refuses mounted Reference Atlas data by default; pass --include-mounted for public example mounts.");
+  }
+  const allowedRoots = [await realpathIfPossible(path.join(repoRoot, "examples", "reference-atlas", "ProofAtlas"))];
+  for (const mount of mounted) {
+    const realRoot = await realpathIfPossible(mount.root as string);
+    if (!allowedRoots.some((allowed) => isWithinDirectory(allowed, realRoot))) {
+      throw new Error(`Mounted atlas ${mount.id} is not in the demo-data public allowlist.`);
+    }
+  }
+}
+
+type DemoGraph = Awaited<ReturnType<typeof buildGraph>>;
+type DemoProjectPayload = {
+  source_project: string;
+  graph: DemoGraph;
+  bodies: Record<string, Awaited<ReturnType<typeof buildBodyFiles>>>;
+};
+
+async function buildDemoProjectPayload(graph: DemoGraph, repoRoot: string): Promise<DemoProjectPayload> {
+  const bodies = Object.fromEntries(await Promise.all(graph.objects.map(async (object) => [
+    object.uid,
+    await buildBodyFiles(graph, object)
+  ] as const)));
+  return {
+    source_project: compactDemoPath(repoRoot, graph.atlasRoot),
+    graph: compactDemoGraphPaths(graph, repoRoot),
+    bodies
+  };
+}
+
+function demoProjectListItem(graph: DemoGraph, repoRoot: string, generatedAt: string): RegistryProjectListItem {
+  return {
+    id: graph.config.project,
+    title: graph.config.title,
+    atlas_root: compactDemoPath(repoRoot, graph.atlasRoot),
+    workspace_root: graph.workspaceRoot ? compactDemoPath(repoRoot, graph.workspaceRoot) : null,
+    last_opened: generatedAt,
+    missing: false
+  };
 }
 
 function compactDemoGraphPaths(graph: Awaited<ReturnType<typeof buildGraph>>, repoRoot: string): Awaited<ReturnType<typeof buildGraph>> {
@@ -529,7 +597,7 @@ function compactDemoGraphPaths(graph: Awaited<ReturnType<typeof buildGraph>>, re
   demoGraph.workspace.bib = demoGraph.workspace.bib.map((item) => compact(item));
 
   const compactObject = (object: typeof demoGraph.objects[number]) => {
-    object.origin.atlasRoot = compact(object.origin.atlasRoot) ?? object.origin.atlasRoot;
+    object.origin.atlasRoot = compact(object.origin.atlasRoot);
     if (object.citation?.bibfile) object.citation.bibfile = compact(object.citation.bibfile);
   };
   for (const object of demoGraph.objects) compactObject(object);
@@ -540,36 +608,288 @@ function compactDemoGraphPaths(graph: Awaited<ReturnType<typeof buildGraph>>, re
     mount.root = compactNullable(mount.root);
     mount.realRoot = compactNullable(mount.realRoot);
   }
+  for (const registry of Object.values(demoGraph.bibRegistriesByOwner)) {
+    registry.registryPath = compactNullable(registry.registryPath);
+    for (const file of registry.files) file.file = compact(file.file);
+    for (const entry of Object.values(registry.entriesByKey)) {
+      entry.file = compact(entry.file);
+      entry.sourceFile = compact(entry.sourceFile);
+      entry.registryPath = compact(entry.registryPath);
+    }
+  }
+  demoGraph.bibRegistry.registryPath = compactNullable(demoGraph.bibRegistry.registryPath);
+  for (const file of demoGraph.bibRegistry.files) file.file = compact(file.file);
   for (const entry of Object.values(demoGraph.bibRegistry.entriesByKey)) {
     entry.file = compact(entry.file);
+    entry.sourceFile = compact(entry.sourceFile);
     entry.registryPath = compact(entry.registryPath);
   }
 
   return demoGraph;
 }
 
+function collectUnsafeAbsoluteStrings(value: unknown, repoRoot: string, out: string[] = []): string[] {
+  if (typeof value === "string") {
+    if (path.isAbsolute(value) && !isWithinDirectory(repoRoot, value)) out.push(value);
+    return out;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectUnsafeAbsoluteStrings(item, repoRoot, out);
+    return out;
+  }
+  if (value && typeof value === "object") {
+    for (const item of Object.values(value)) collectUnsafeAbsoluteStrings(item, repoRoot, out);
+  }
+  return out;
+}
+
 export async function commandDemoData(project: string | undefined, options: {
   output?: string;
+  includeMounted?: boolean;
 }): Promise<void> {
-  const graph = await buildGraph(project);
-  const bodies = Object.fromEntries(await Promise.all(graph.objects.map(async (object) => [
-    object.uid,
-    await buildBodyFiles(graph, object)
-  ] as const)));
-  const repoRoot = process.cwd();
+  const defaultGraph = await buildGraph(project);
+  const repoRoot = await realpathIfPossible(process.cwd());
+  await assertDemoMountPolicy(defaultGraph, repoRoot, Boolean(options.includeMounted));
+  const generatedAt = new Date().toISOString();
+  const graphs = [defaultGraph];
+  if (options.includeMounted) {
+    for (const mount of defaultGraph.referenceMounts) {
+      if (mount.status !== "mounted" || !mount.root) continue;
+      const mountedGraph = await buildGraph(mount.root);
+      await assertDemoMountPolicy(mountedGraph, repoRoot, Boolean(options.includeMounted));
+      if (!graphs.some((graph) => graph.config.project === mountedGraph.config.project)) graphs.push(mountedGraph);
+    }
+  }
   const payload = {
-    schema_version: "0.1",
-    generated_at: new Date().toISOString(),
-    source_project: compactDemoPath(repoRoot, graph.atlasRoot),
-    graph: compactDemoGraphPaths(graph, repoRoot),
-    bodies
+    schema_version: "0.2",
+    generated_at: generatedAt,
+    default_project: defaultGraph.config.project,
+    projects: graphs.map((graph) => demoProjectListItem(graph, repoRoot, generatedAt)),
+    payloads: Object.fromEntries(await Promise.all(graphs.map(async (graph) => [
+      graph.config.project,
+      await buildDemoProjectPayload(graph, repoRoot)
+    ] as const)))
   };
+  const unsafe = collectUnsafeAbsoluteStrings(payload, repoRoot);
+  if (unsafe.length) {
+    throw new Error(`demo-data payload contains non-public absolute path(s): ${[...new Set(unsafe)].join(", ")}`);
+  }
   const outputPath = options.output
     ? path.resolve(process.cwd(), expandHome(options.output))
     : path.resolve(process.cwd(), "public", "demo-data.json");
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.writeFile(outputPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-  console.log(`Wrote demo data for ${graph.config.title}: ${outputPath}`);
+  console.log(`Wrote demo data for ${graphs.map((graph) => graph.config.title).join(", ")}: ${outputPath}`);
+}
+
+async function resolveCliProject(input: string | undefined): Promise<ResolvedAtlasProject> {
+  if (!input) return resolveAtlasProject(undefined);
+  return looksLikeCliPath(input) ? resolveAtlasProject(input) : resolveProjectPathOrId(input);
+}
+
+function looksLikeCliPath(value: string): boolean {
+  return value.startsWith("/")
+    || value.startsWith("~/")
+    || value === "~"
+    || value === "."
+    || value === ".."
+    || value.startsWith("./")
+    || value.startsWith("../")
+    || value.includes("/");
+}
+
+function jsonCliError(code: string, message: string): never {
+  console.log(JSON.stringify({ error: { code, message } }, null, 2));
+  process.exit(1);
+}
+
+function normalizedQueryMatch(query: string, values: Array<string | undefined>): boolean {
+  const needles = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const haystack = values.filter((item): item is string => Boolean(item)).join(" ").toLowerCase();
+  return needles.every((needle) => haystack.includes(needle));
+}
+
+export async function commandReferenceFind(query: string, projectInput: string | undefined, options: { json?: boolean }): Promise<void> {
+  const resolved = await resolveCliProject(projectInput);
+  const graph = await buildGraph(resolved);
+  if (graph.config.atlas_type !== "reference" && graph.referenceMounts.length === 0) {
+    if (options.json) jsonCliError("reference_atlas_not_mounted", "This project has no registered Reference Atlas mount.");
+    cliError("This project has no registered Reference Atlas mount.", 1);
+  }
+  const unresolved = graph.referenceMounts.find((mount) => mount.status === "missing");
+  if (unresolved) {
+    if (options.json) jsonCliError("reference_atlas_mount_unresolved", unresolved.message ?? `Reference Atlas ${unresolved.id} is unresolved.`);
+    cliError(unresolved.message ?? `Reference Atlas ${unresolved.id} is unresolved.`, 1);
+  }
+  const sourceRoots = new Map<string, string>();
+  const matches: Array<Record<string, unknown>> = [];
+  for (const object of graph.objects.filter((item) => item.name.startsWith("source."))) {
+    const owner = object.origin.ownerProject;
+    if (object.name.split(".").length === 2 && object.citation?.bibkey) sourceRoots.set(`${owner}:${object.citation.bibkey}`, object.name);
+    if (!normalizedQueryMatch(query, [object.name, object.title, object.summary, object.citation?.bibkey])) continue;
+    matches.push({
+      kind: object.source_result ? "source_result" : "source_card",
+      name: object.name,
+      uid: object.uid,
+      bibkey: object.citation?.bibkey,
+      trust: object.citation?.trust,
+      owner_project: owner
+    });
+  }
+  for (const registry of Object.values(graph.bibRegistriesByOwner)) {
+    for (const entry of Object.values(registry.entriesByKey)) {
+      if (!normalizedQueryMatch(query, [
+        entry.bibkey,
+        entry.fields.title,
+        entry.fields.author,
+        entry.fields.editor,
+        entry.year,
+        entry.normalizedDoi,
+        entry.normalizedArxiv
+      ])) continue;
+      if (sourceRoots.has(`${entry.ownerProject}:${entry.bibkey}`)) continue;
+      matches.push({
+        kind: "bib_entry_only",
+        bibkey: entry.bibkey,
+        trust: entry.trust,
+        owner_project: entry.ownerProject,
+        entry_type: entry.entryType,
+        title: entry.fields.title,
+        year: entry.year
+      });
+    }
+  }
+  const exactMatches = matches.filter((match) => {
+    const name = typeof match.name === "string" ? match.name.toLowerCase() : "";
+    const bibkey = typeof match.bibkey === "string" ? match.bibkey.toLowerCase() : "";
+    return name === query.toLowerCase() || bibkey === query.toLowerCase();
+  });
+  const result = { query, ambiguous: exactMatches.length > 1, matches };
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (matches.length === 0) {
+    console.log("No reference matches.");
+    return;
+  }
+  for (const match of matches) {
+    const name = typeof match.name === "string" ? ` ${match.name}` : "";
+    const bibkey = typeof match.bibkey === "string" ? ` [${match.bibkey}]` : "";
+    const trust = typeof match.trust === "string" ? ` ${match.trust}` : "";
+    console.log(`${match.kind}${name}${bibkey}${trust}`);
+  }
+}
+
+export async function commandBibCheck(referenceAtlasInput: string | undefined): Promise<void> {
+  const resolved = await resolveCliProject(referenceAtlasInput);
+  const identity = await readProjectIdentity(resolved);
+  const problems: Awaited<ReturnType<typeof buildGraph>>["problems"] = [];
+  const registry = await loadBibRegistryForRoot(resolved.atlasRoot, identity.project, problems);
+  printProblems(problems);
+  for (const entry of Object.values(registry.entriesByKey).sort((a, b) => a.bibkey.localeCompare(b.bibkey))) {
+    console.log(`${entry.bibkey}\t${entry.trust}\t${entry.entryType}\t${entry.year ?? ""}\t${entry.fields.title ?? ""}`);
+  }
+  const failed = hasCheckErrors(problems, true);
+  console.log(`${failed ? "FAILED" : "OK"} bib check: ${Object.keys(registry.entriesByKey).length} entr${Object.keys(registry.entriesByKey).length === 1 ? "y" : "ies"}.`);
+  process.exit(failed ? 1 : 0);
+}
+
+async function ownerProjectForReferenceAtlas(project: ResolvedAtlasProject): Promise<string> {
+  const identity = await readProjectIdentity(project);
+  return identity.project;
+}
+
+export async function commandBibAdd(referenceAtlasInput: string | undefined, options: { raw?: string; file?: string }): Promise<void> {
+  if (Boolean(options.raw) === Boolean(options.file)) cliError("bib add requires exactly one of --raw or --file.", 2);
+  const resolved = await resolveCliProject(referenceAtlasInput);
+  const ownerProject = await ownerProjectForReferenceAtlas(resolved);
+  const source = options.raw ?? await fs.readFile(path.resolve(process.cwd(), expandHome(options.file as string)), "utf8");
+  try {
+    parseSingleBibEntry(source);
+    const result = await appendBibEntryToUnverified(resolved.atlasRoot, ownerProject, source);
+    for (const warning of result.warnings) {
+      console.warn(`warning: normalized title + year matches ${warning.existingBibkey} (${warning.year}).`);
+    }
+    console.log(`Added ${result.entry.bibkey} to ${result.outputFile}`);
+    console.log(`Backup: ${result.backupFile}`);
+  } catch (error) {
+    if (error instanceof BibError) cliError(error.message, error.exitCode);
+    throw error;
+  }
+}
+
+function normalizeBibkeySlug(bibkey: string): string {
+  return bibkey
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+async function commandReferenceCreate(bibkey: string, referenceAtlasInput: string | undefined, options: { name?: string }): Promise<void> {
+  const resolved = await resolveCliProject(referenceAtlasInput);
+  const graph = await buildGraph(resolved);
+  if (graph.config.atlas_type !== "reference") cliError("reference create must target a Reference Atlas.", 2);
+  const registry = graph.bibRegistriesByOwner[graph.config.project];
+  const entry = registry?.entriesByKey[bibkey];
+  if (!entry) cliError(`BibTeX key not found in this Reference Atlas: ${bibkey}`, 1);
+  const name = options.name?.trim() ?? `source.${normalizeBibkeySlug(bibkey)}`;
+  if (!/^source\.[a-z][a-z0-9_]*$/.test(name)) cliError(`Invalid source root name ${name}; pass --name source.<work>.`, 2);
+  if (graph.objectsByName[name]) cliError(`Object already exists: ${name}`, 1);
+  if (graph.objects.some((object) => object.name.startsWith("source.") && object.citation?.bibkey === bibkey)) {
+    cliError(`A source object for BibTeX key ${bibkey} already exists.`, 1);
+  }
+  const uid = generateUid(new Set(graph.objects.map((object) => object.uid)));
+  const dir = path.join(resolved.atlasRoot, "objects", name);
+  await fs.mkdir(dir, { recursive: true });
+  await writeYamlFile(path.join(dir, "object.yml"), {
+    uid,
+    name,
+    kind: "note",
+    role: "literature",
+    display_as: "literature_note",
+    importance: "background",
+    status: "draft",
+    provenance: "external",
+    title: entry.fields.title ?? bibkey,
+    body: ["note.md"],
+    citation: { bibkey }
+  });
+  await fs.writeFile(path.join(dir, "note.md"), `# ${entry.fields.title ?? bibkey}\n\nReading notes and verification status.\n`, "utf8");
+  console.log(`Created ${name} (${uid})`);
+}
+
+async function commandReferenceAddResult(sourceName: string, resultName: string, referenceAtlasInput: string | undefined): Promise<void> {
+  const resolved = await resolveCliProject(referenceAtlasInput);
+  const graph = await buildGraph(resolved);
+  if (graph.config.atlas_type !== "reference") cliError("reference add-result must target a Reference Atlas.", 2);
+  const parent = graph.objectsByName[sourceName];
+  if (!parent || !/^source\.[a-z][a-z0-9_]*$/.test(parent.name)) cliError(`Source root not found: ${sourceName}`, 1);
+  const resultSegment = resultName.startsWith(`${sourceName}.claim.`) ? resultName.slice(`${sourceName}.claim.`.length) : resultName;
+  if (!/^[a-z][a-z0-9_]*$/.test(resultSegment)) cliError(`Invalid result name segment: ${resultName}`, 2);
+  const name = `${sourceName}.claim.${resultSegment}`;
+  if (graph.objectsByName[name]) cliError(`Object already exists: ${name}`, 1);
+  const uid = generateUid(new Set(graph.objects.map((object) => object.uid)));
+  const dir = path.join(resolved.atlasRoot, "objects", name);
+  await fs.mkdir(dir, { recursive: true });
+  await writeYamlFile(path.join(dir, "object.yml"), {
+    uid,
+    name,
+    kind: "math",
+    role: "claim",
+    display_as: "lemma",
+    importance: "background",
+    provenance: "external",
+    status: "needs_check",
+    title: resultSegment.replace(/_/g, " "),
+    body: ["statement.md"],
+    source_result: {
+      parent: sourceName
+    }
+  });
+  await fs.writeFile(path.join(dir, "statement.md"), "State the external result here.\n", "utf8");
+  console.log(`Created ${name} (${uid})`);
 }
 
 export async function commandSuggest(project: string | undefined, options: {
@@ -719,12 +1039,55 @@ async function main(): Promise<void> {
     .option("--format <format>", "markdown, manifest, or json", "markdown")
     .option("--output <file>", "write export to a file")
     .option("--snapshot <file>", "write a frozen snapshot YAML")
+    .option("--require-clean", "fail snapshot creation if active or mounted git repositories are dirty")
     .action((routeFile, project, options) => commandExport(routeFile, project, options));
 
   program.command("demo-data")
     .argument("[project]", "ProofAtlas directory or workspace directory")
     .option("--output <file>", "write static demo JSON", "public/demo-data.json")
-    .action((project, options) => commandDemoData(project, options));
+    .option("--include-mounted", "include mounted Reference Atlas data after public allowlist checks")
+    .action((project, options) => commandDemoData(project, {
+      output: options.output,
+      includeMounted: Boolean(options.includeMounted)
+    }));
+
+  const reference = program.command("reference")
+    .description("Reference Atlas lookup and skeleton creation");
+
+  reference.command("find")
+    .argument("<query>")
+    .argument("[project-or-reference-atlas]", "ProofAtlas path, workspace path, or registered project id")
+    .option("--json", "print stable JSON")
+    .action((query, projectOrReferenceAtlas, options) => commandReferenceFind(query, projectOrReferenceAtlas, {
+      json: Boolean(options.json)
+    }));
+
+  reference.command("create")
+    .argument("<bibkey>")
+    .argument("[reference-atlas]", "Reference Atlas path, workspace path, or registered project id")
+    .option("--name <name>", "explicit source.<work> object name")
+    .action((bibkey, referenceAtlas, options) => commandReferenceCreate(bibkey, referenceAtlas, {
+      name: options.name
+    }));
+
+  reference.command("add-result")
+    .argument("<source-name>")
+    .argument("<result-name>")
+    .argument("[reference-atlas]", "Reference Atlas path, workspace path, or registered project id")
+    .action(commandReferenceAddResult);
+
+  const bib = program.command("bib")
+    .description("Reference Atlas BibTeX checks and append-only add workflow");
+
+  bib.command("check")
+    .argument("[reference-atlas]", "Reference Atlas path, workspace path, or registered project id")
+    .action(commandBibCheck);
+
+  bib.command("add")
+    .argument("[reference-atlas]", "Reference Atlas path, workspace path, or registered project id")
+    .option("--raw <bibtex>", "single BibTeX entry")
+    .option("--file <file>", "file containing a single BibTeX entry")
+    .action((referenceAtlas, options) => commandBibAdd(referenceAtlas, options));
 
   program.command("suggest")
     .argument("[project]", "ProofAtlas directory or workspace directory")

@@ -162,11 +162,9 @@ export interface AtlasWorkspaceConfig {
 }
 
 export type AtlasType = "project" | "reference";
-export type ReferenceMountMode = "readonly" | "readwrite";
 
 export interface ReferenceMountConfig {
   id: string;
-  mode: ReferenceMountMode;
 }
 
 export interface AtlasReferencesConfig {
@@ -174,7 +172,7 @@ export interface AtlasReferencesConfig {
 }
 
 export interface AtlasConfig {
-  schema_version: "0.1";
+  schema_version: "0.2";
   project: string;
   title: string;
   default_view: string;
@@ -223,6 +221,7 @@ export interface ObjectOrigin {
   kind: ObjectOriginKind;
   atlasRoot: string;
   atlasId?: string;
+  ownerProject: string;
   objectPath: string;
   readonly: boolean;
 }
@@ -230,19 +229,36 @@ export interface ObjectOrigin {
 export type BibTrust = "trusted" | "unverified" | "rejected";
 
 export interface BibRegistryEntry {
+  ownerProject: string;
   bibkey: string;
+  entryType: string;
+  fields: Record<string, string>;
+  raw: string;
+  sourceFile: string;
   trust: BibTrust;
   file: string;
   registryId: string;
   registryPath: string;
-  entryType?: string;
+  normalizedDoi?: string;
+  normalizedArxiv?: string;
+  normalizedTitle?: string;
+  year?: string;
 }
 
 export interface NormalizedBibRegistry {
+  ownerProject: string;
+  registryPath: string | null;
   entriesByKey: Record<string, BibRegistryEntry>;
+  files: Array<{
+    id: string;
+    path: string;
+    file: string;
+    trust: BibTrust;
+  }>;
 }
 
 export interface NormalizedCitation {
+  ownerProject?: string;
   bibkey: string;
   trust?: BibTrust;
   bibfile?: string;
@@ -383,12 +399,12 @@ export interface NormalizedGraph {
   problems: AtlasProblem[];
   referenceMounts: ResolvedReferenceMount[];
   bibRegistry: NormalizedBibRegistry;
+  bibRegistriesByOwner: Record<string, NormalizedBibRegistry>;
   builtAt: string;
 }
 
 export interface ResolvedReferenceMount {
   id: string;
-  mode: ReferenceMountMode;
   root: string | null;
   realRoot: string | null;
   status: "mounted" | "missing";

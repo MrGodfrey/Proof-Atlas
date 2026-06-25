@@ -23,7 +23,7 @@ export async function writeTestProject(root: string, objects: TestObject[], opti
   await fs.mkdir(path.join(projectRoot, "views"), { recursive: true });
   await fs.mkdir(path.join(projectRoot, ".atlas"), { recursive: true });
   await writeYamlFile(path.join(projectRoot, "atlas.yml"), {
-    schema_version: "0.1",
+    schema_version: "0.2",
     project: "test-project",
     title: "Test Project",
     default_view: "views/paper.md",

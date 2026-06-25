@@ -10,12 +10,10 @@ status: checked
 body:
   - statement.md
 summary: Low-frequency partial discrete spectral inequality imported from Boyer--Hubert--Le Rousseau 2010a.
-citation:
-  bibkey: Boyer2010a
 source_result:
   parent: source.boyer_2010a
   location: "Spectral inequality consequence of the arbitrary-dimensional discrete Carleman estimate; exact theorem/equation location needs audit."
-  statement_fidelity: needs_check
+  statement_fidelity: paraphrased
 edges:
   cites:
     - target: source.boyer_2010a

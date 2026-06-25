@@ -14,5 +14,8 @@ edges:
     - target: main.estimate.observability_spectral_bound
   uses:
     - target: source.boyer_2010a.claim.partial_discrete_lr
+      reason: >
+        Applied to the low-frequency finite eigenfunction combination used in
+        the pointwise spectral estimate, with matching mesh-frequency range.
     - target: main.model.backward_adjoint_system
     - target: main.setting.spectral_spaces

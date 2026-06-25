@@ -12,7 +12,7 @@ examples/semidiscrete/ProofAtlas
 examples/reference-atlas/ProofAtlas
 ```
 
-这个示例把半离散随机抛物方程论文拆成对象图，包括论文概览、引言、连续模型、离散网格、主定理、预备命题、证明、主证明迭代、适应性审计和文献引用。文献 note 和外部结果位于 `shared-reference-atlas`，论文项目通过 `references.mounts` 只读挂载。
+这个示例把半离散随机抛物方程论文拆成对象图，包括论文概览、引言、连续模型、离散网格、主定理、预备命题、证明、主证明迭代、适应性审计和文献引用。文献 note 和外部结果位于 `proof-atlas-example-reference-atlas`，论文项目通过 `references.mounts` 只读挂载。Cloudflare Demo 顶部的 `Open` 菜单会列出论文项目和 Reference Atlas，可以像本地应用一样直接切换。
 
 ## 推荐阅读顺序
 
@@ -100,4 +100,4 @@ main.model.continuous_problem cites source.lue_2011
 main.note.introduction cites all introduction references
 ```
 
-网页会把 literature 链接显示成方括号样式。`source.*` 对象来自 `examples/reference-atlas/ProofAtlas`，因此右栏会显示 `origin: global_reference`、`origin_atlas: shared-reference-atlas`、bibkey 和 trust。普通论文项目不再本地维护这些 `source.*` 对象。
+网页会把 literature 链接显示成方括号样式。`source.*` 对象来自 `examples/reference-atlas/ProofAtlas`，因此右栏会显示 `origin: global_reference`、`origin_atlas: proof-atlas-example-reference-atlas`、bibkey 和 trust。普通论文项目不再本地维护这些 `source.*` 对象。

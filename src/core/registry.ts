@@ -57,25 +57,44 @@ function normalizeRegistry(raw: unknown): ProjectRegistry {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return emptyRegistry();
   const record = raw as Record<string, unknown>;
   const recent = Array.isArray(record.recent) ? record.recent : [];
+  const normalized: RegistryProjectEntry[] = [];
+  const ids = new Set<string>();
+  const invalidEntries: number[] = [];
+  const duplicateIds = new Set<string>();
+  for (const [index, item] of recent.entries()) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      invalidEntries.push(index);
+      continue;
+    }
+    const entry = item as Record<string, unknown>;
+    if (
+      typeof entry.id !== "string"
+      || typeof entry.title !== "string"
+      || typeof entry.atlas_root !== "string"
+      || typeof entry.last_opened !== "string"
+    ) {
+      invalidEntries.push(index);
+      continue;
+    }
+    if (ids.has(entry.id)) duplicateIds.add(entry.id);
+    ids.add(entry.id);
+    normalized.push({
+      id: entry.id,
+      title: entry.title,
+      atlas_root: entry.atlas_root,
+      workspace_root: typeof entry.workspace_root === "string" ? entry.workspace_root : null,
+      last_opened: entry.last_opened
+    });
+  }
+  if (invalidEntries.length) {
+    throw new ProjectError(`registry_entry_invalid: projects.yml has invalid recent entries at index ${invalidEntries.join(", ")}.`);
+  }
+  if (duplicateIds.size) {
+    throw new ProjectError(`registry_duplicate_project_id: projects.yml has duplicate project id(s): ${[...duplicateIds].join(", ")}.`);
+  }
   return {
     version: 1,
-    recent: recent.flatMap((item) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) return [];
-      const entry = item as Record<string, unknown>;
-      if (
-        typeof entry.id !== "string"
-        || typeof entry.title !== "string"
-        || typeof entry.atlas_root !== "string"
-        || typeof entry.last_opened !== "string"
-      ) return [];
-      return [{
-        id: entry.id,
-        title: entry.title,
-        atlas_root: entry.atlas_root,
-        workspace_root: typeof entry.workspace_root === "string" ? entry.workspace_root : null,
-        last_opened: entry.last_opened
-      }];
-    })
+    recent: normalized
   };
 }
 
@@ -109,17 +128,6 @@ export async function writeRegistry(registry: ProjectRegistry, options?: Registr
   await writeYamlFile(filePath, registry);
 }
 
-function nextDisambiguatedId(baseId: string, entries: RegistryProjectEntry[]): string {
-  let index = 2;
-  let candidate = `${baseId}-${index}`;
-  const ids = new Set(entries.map((entry) => entry.id));
-  while (ids.has(candidate)) {
-    index += 1;
-    candidate = `${baseId}-${index}`;
-  }
-  return candidate;
-}
-
 export async function registerResolvedProject(
   project: ResolvedAtlasProject,
   config: Pick<AtlasConfig, "project" | "title">,
@@ -134,6 +142,7 @@ export async function registerResolvedProject(
     const existing = registry.recent[existingIndex];
     const entry: RegistryProjectEntry = {
       ...existing,
+      id: config.project,
       title: config.title,
       atlas_root: project.atlasRoot,
       workspace_root: project.workspaceRoot,
@@ -145,24 +154,22 @@ export async function registerResolvedProject(
     return { entry };
   }
 
-  let id = config.project;
-  let warning: string | undefined;
-  if (registry.recent.some((entry) => entry.id === id)) {
-    const original = id;
-    id = nextDisambiguatedId(id, registry.recent);
-    warning = `Registry id ${original} is already used; registered this project as ${id}.`;
+  const existingId = registry.recent.find((entry) => entry.id === config.project);
+  if (existingId && await pathExists(path.join(existingId.atlas_root, "atlas.yml"))) {
+    throw new ProjectError(`registry_duplicate_project_id: project id ${config.project} already points to ${existingId.atlas_root}.`);
   }
 
   const entry: RegistryProjectEntry = {
-    id,
+    id: config.project,
     title: config.title,
     atlas_root: project.atlasRoot,
     workspace_root: project.workspaceRoot,
     last_opened
   };
+  if (existingId) registry.recent = registry.recent.filter((item) => item.id !== config.project);
   registry.recent.unshift(entry);
   await writeRegistry(registry, options);
-  return { entry, warning };
+  return { entry };
 }
 
 async function asyncFindIndex<T>(items: T[], predicate: (item: T) => Promise<boolean>): Promise<number> {

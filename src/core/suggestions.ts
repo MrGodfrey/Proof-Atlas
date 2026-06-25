@@ -101,6 +101,7 @@ function resolveReference(graph: NormalizedGraph, target: string): NormalizedObj
 async function suggestMissingEdges(graph: NormalizedGraph): Promise<MissingEdgeSuggestion[]> {
   const suggestions = new Map<string, MissingEdgeSuggestion>();
   for (const object of graph.objects) {
+    if (object.origin.kind !== "project") continue;
     const existing = existingDependencyTargets(object);
     for (const body of await readObjectBodies(graph, object)) {
       for (const ref of parseMarkdownReferences(body.text)) {
@@ -149,6 +150,7 @@ function draftSummary(text: string): string | undefined {
 async function suggestSummaries(graph: NormalizedGraph): Promise<SummarySuggestion[]> {
   const suggestions: SummarySuggestion[] = [];
   for (const object of graph.objects) {
+    if (object.origin.kind !== "project") continue;
     if (object.summary) continue;
     const body = (await readObjectBodies(graph, object))[0];
     if (!body) continue;
@@ -226,6 +228,7 @@ function rawEdgeTarget(item: unknown): string | undefined {
 async function applyMissingEdge(graph: NormalizedGraph, suggestion: MissingEdgeSuggestion): Promise<void> {
   const object = graph.objectsByName[suggestion.object];
   if (!object) throw new Error(`Suggestion ${suggestion.id} references missing object ${suggestion.object}.`);
+  if (object.origin.kind !== "project" || object.origin.readonly) throw new Error(`Suggestion ${suggestion.id} targets readonly mounted object ${suggestion.object}.`);
   if (!graph.objectsByName[suggestion.target]) throw new Error(`Suggestion ${suggestion.id} references missing target ${suggestion.target}.`);
   const file = path.join(graph.root, object.objectPath);
   const raw = await readYamlFile<Record<string, unknown>>(file);
@@ -246,6 +249,7 @@ async function applyMissingEdge(graph: NormalizedGraph, suggestion: MissingEdgeS
 async function applySummary(graph: NormalizedGraph, suggestion: SummarySuggestion): Promise<void> {
   const object = graph.objectsByName[suggestion.object];
   if (!object) throw new Error(`Suggestion ${suggestion.id} references missing object ${suggestion.object}.`);
+  if (object.origin.kind !== "project" || object.origin.readonly) throw new Error(`Suggestion ${suggestion.id} targets readonly mounted object ${suggestion.object}.`);
   const file = path.join(graph.root, object.objectPath);
   const raw = await readYamlFile<Record<string, unknown>>(file);
   raw.summary = suggestion.summary;

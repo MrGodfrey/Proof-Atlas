@@ -1,6 +1,6 @@
-schema_version: "0.1"
-project: shared-reference-atlas
-title: Shared Reference Atlas
+schema_version: "0.2"
+project: proof-atlas-example-reference-atlas
+title: Proof Atlas Example Reference Atlas
 default_view: views/references.md
 math_renderer: katex
 atlas_type: reference

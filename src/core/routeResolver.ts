@@ -149,10 +149,54 @@ const SUPPORT_ROLES = new Set([
   "assumption"
 ]);
 
+const SOURCE_CLAIM_PATTERN = /^source\.[a-z][a-z0-9_]*\.claim\.[a-z][a-z0-9_]*$/;
+
+interface ExternalAcceptanceAssessment {
+  accepted: boolean;
+  code?: string;
+  message?: string;
+  severity?: RouteDiagnosticSeverity;
+}
+
+export function assessExternalAcceptance(object: NormalizedObject): ExternalAcceptanceAssessment {
+  if (!SOURCE_CLAIM_PATTERN.test(object.name)) {
+    return { accepted: false, code: "not_external_source_claim", message: `${object.name} is not a source claim.`, severity: "error" };
+  }
+  if (object.kind !== "math" || object.role !== "claim" || object.provenance !== "external") {
+    return { accepted: false, code: "invalid_external_source_claim", message: `${object.name} is not an external math claim.`, severity: "error" };
+  }
+  if (object.citation?.trust === "rejected") {
+    return { accepted: false, code: "rejected_external_input", message: `${object.name} comes from a rejected BibTeX entry.`, severity: "error" };
+  }
+  if (object.citation?.trust !== "trusted") {
+    return { accepted: false, code: "untrusted_external_input", message: `${object.name} is not backed by a trusted BibTeX entry.`, severity: "error" };
+  }
+  if (object.status !== "checked") {
+    return { accepted: false, code: "external_input_needs_check", message: `${object.name} status is ${object.status}, not checked.`, severity: "error" };
+  }
+  if (!object.source_result?.parent) {
+    return { accepted: false, code: "missing_external_parent", message: `${object.name} has no source_result.parent.`, severity: "error" };
+  }
+  if (!object.source_result.location) {
+    return { accepted: false, code: "missing_external_location", message: `${object.name} has no source_result.location.`, severity: "error" };
+  }
+  if (!object.source_result.statement_fidelity) {
+    return { accepted: false, code: "missing_statement_fidelity", message: `${object.name} has no statement_fidelity.`, severity: "error" };
+  }
+  if (object.source_result.statement_fidelity === "adapted") {
+    return { accepted: false, code: "adapted_external_input", message: `${object.name} is adapted and must be represented by a local claim before use.`, severity: "error" };
+  }
+  if (!["verbatim", "paraphrased"].includes(object.source_result.statement_fidelity)) {
+    return { accepted: false, code: "invalid_statement_fidelity", message: `${object.name} has invalid statement_fidelity.`, severity: "error" };
+  }
+  if (!object.body.includes("statement.md")) {
+    return { accepted: false, code: "missing_external_statement", message: `${object.name} has no statement.md.`, severity: "error" };
+  }
+  return { accepted: true };
+}
+
 function isAcceptedInputObject(object: NormalizedObject): boolean {
-  return object.kind === "math"
-    && object.role === "claim"
-    && (object.provenance !== "internal" || object.origin.kind !== "project");
+  return assessExternalAcceptance(object).accepted;
 }
 
 export function routeBoundaryKind(node: Pick<ResolvedRouteNode, "object" | "decision">): RouteBoundaryKind | undefined {
@@ -653,6 +697,15 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
       });
       return undefined;
     }
+    if (ref.strength === "hard" && SOURCE_CLAIM_PATTERN.test(object.name) && !ref.reason?.trim()) {
+      diagnostics.push({
+        severity: "error",
+        code: "missing_external_dependency_reason",
+        message: `${source.name} hard-depends on external source claim ${object.name} without an edge reason.`,
+        objectName: source.name,
+        target: object.name
+      });
+    }
     include(object, [...path, object.name], depth, ref.strength, direct);
     return object;
   };
@@ -734,10 +787,19 @@ export function resolveRoute(graph: NormalizedGraph, options: ResolveRouteOption
     }
     const proof = chooseProof(graph, claim, proofChoices[claim.name], diagnostics, proofAlternatives);
     if (!proof) {
-      if (isAcceptedInputObject(claim)) {
+      const externalAssessment = SOURCE_CLAIM_PATTERN.test(claim.name) ? assessExternalAcceptance(claim) : undefined;
+      if (externalAssessment?.accepted) {
         node!.decision = "boundary";
       } else {
         node!.decision = "unresolved";
+        if (externalAssessment) {
+          diagnostics.push({
+            severity: externalAssessment.severity ?? "error",
+            code: externalAssessment.code ?? "external_input_not_accepted",
+            message: externalAssessment.message ?? `${claim.name} is not accepted-input ready.`,
+            objectName: claim.name
+          });
+        }
         diagnostics.push({
           severity: "error",
           code: "unresolved_claim",

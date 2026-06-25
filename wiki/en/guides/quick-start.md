@@ -85,11 +85,10 @@ If the project uses a shared Reference Atlas, declare the mount in `ProofAtlas/a
 ```yaml
 references:
   mounts:
-    - id: shared-reference-atlas
-      mode: readonly
+    - id: proof-atlas-example-reference-atlas
 ```
 
-Put local machine paths in `ProofAtlas/.atlas/local.yml` or `~/.proof-atlas/reference-atlases.yml`. Do not commit local absolute paths. See [Reference Atlas and citation sources](../reference/reference-atlases.md).
+Register the Reference Atlas with `npm run atlas -- register <reference-atlas>` first. Mount paths come from `~/.proof-atlas/projects.yml`; do not commit local absolute paths. See [Reference Atlas and citation sources](../reference/reference-atlases.md).
 
 ## Common CLI Commands
 

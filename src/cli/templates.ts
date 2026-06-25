@@ -4,7 +4,7 @@ import type { AtlasConfig } from "../core/types";
 
 export function atlasConfigTemplate(project = "proof-atlas-project", title = "Proof Atlas Project"): AtlasConfig {
   return {
-    schema_version: "0.1",
+    schema_version: "0.2",
     project,
     title,
     default_view: "views/dashboard.md",

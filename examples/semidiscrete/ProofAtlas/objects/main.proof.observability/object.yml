@@ -16,6 +16,9 @@ edges:
     - target: main.claim.observability
   uses:
     - target: source.boyer_2010a.claim.partial_discrete_lr
+      reason: >
+        Applied to the same low-frequency semi-discrete adjoint expansion;
+        notation is translated through the spectral-space setup in this project.
     - target: main.model.backward_adjoint_system
     - target: main.setting.spectral_spaces
     - target: main.estimate.observability_spectral_bound

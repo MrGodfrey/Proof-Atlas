@@ -1,5 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { hardEdgeTargets } from "./edgeUtils";
 import { parseMarkdownReferences } from "./markdownRefs";
 import type { NormalizedGraph, NormalizedObject, RouteView } from "./types";
@@ -22,11 +24,26 @@ export interface RouteSnapshot {
   exported_at: string;
   project_uid: string;
   graph_built_at: string;
+  reproducible: boolean;
+  repositories: SnapshotRepositoryState[];
   route: RouteView;
   object_names: string[];
   markdown: string;
   diagnostics: RouteDiagnostic[];
 }
+
+export interface SnapshotRepositoryState {
+  project: string;
+  role: "active" | "mounted_reference";
+  git_commit: string | null;
+  dirty: boolean;
+}
+
+export interface SnapshotOptions {
+  requireClean?: boolean;
+}
+
+const execFileAsync = promisify(execFile);
 
 function anchorForName(name: string): string {
   return `object-${name.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-|-$/g, "")}`;
@@ -95,6 +112,10 @@ function collapseRepeatedSelfLinkLabels(source: string, labels: Set<string>): st
   return out;
 }
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function rewriteAtlasLinks(
   graph: NormalizedGraph,
   source: string,
@@ -152,106 +173,25 @@ function sectionForNode(node: ResolvedRouteNode, targetName: string): string {
   return "Citation and Source Notes";
 }
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function stripBibValue(value: string): string {
-  return value
-    .replace(/\\[{}]/g, "")
-    .replace(/[{}]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function findBibEntry(source: string, bibkey: string): string | undefined {
-  const match = new RegExp(`@\\w+\\s*\\{\\s*${escapeRegex(bibkey)}\\s*,`, "i").exec(source);
-  if (!match) return undefined;
-  const start = match.index;
-  const open = source.indexOf("{", start);
-  if (open < 0) return undefined;
-  let depth = 0;
-  for (let index = open; index < source.length; index += 1) {
-    const char = source[index];
-    if (char === "{") depth += 1;
-    if (char === "}") {
-      depth -= 1;
-      if (depth === 0) return source.slice(start, index + 1);
-    }
-  }
-  return undefined;
-}
-
-function parseBibFields(entry: string): Record<string, string> {
-  const fields: Record<string, string> = {};
-  const firstComma = entry.indexOf(",");
-  const lastBrace = entry.lastIndexOf("}");
-  if (firstComma < 0 || lastBrace < firstComma) return fields;
-  const body = entry.slice(firstComma + 1, lastBrace);
-  let index = 0;
-  while (index < body.length) {
-    while (index < body.length && /[\s,]/.test(body[index])) index += 1;
-    const nameStart = index;
-    while (index < body.length && /[A-Za-z0-9_-]/.test(body[index])) index += 1;
-    const name = body.slice(nameStart, index).toLowerCase();
-    while (index < body.length && /\s/.test(body[index])) index += 1;
-    if (!name || body[index] !== "=") {
-      index += 1;
-      continue;
-    }
-    index += 1;
-    while (index < body.length && /\s/.test(body[index])) index += 1;
-    let value = "";
-    if (body[index] === "{") {
-      const valueStart = index + 1;
-      let depth = 1;
-      index += 1;
-      while (index < body.length && depth > 0) {
-        if (body[index] === "{") depth += 1;
-        if (body[index] === "}") depth -= 1;
-        index += 1;
-      }
-      value = body.slice(valueStart, index - 1);
-    } else if (body[index] === "\"") {
-      const valueStart = index + 1;
-      index += 1;
-      while (index < body.length && body[index] !== "\"") index += 1;
-      value = body.slice(valueStart, index);
-      index += 1;
-    } else {
-      const valueStart = index;
-      while (index < body.length && body[index] !== ",") index += 1;
-      value = body.slice(valueStart, index);
-    }
-    fields[name] = stripBibValue(value);
-  }
-  return fields;
-}
-
-async function citationReferenceLine(object: NormalizedObject): Promise<string | undefined> {
+function citationReferenceLine(graph: NormalizedGraph, object: NormalizedObject): string | undefined {
   if (!object.citation) return undefined;
   const bibkey = object.citation.bibkey;
-  if (!object.citation.bibfile) return `[${bibkey}] ${object.title}.`;
-  try {
-    const source = await fs.readFile(object.citation.bibfile, "utf8");
-    const entry = findBibEntry(source, bibkey);
-    if (!entry) return `[${bibkey}] ${object.title}.`;
-    const fields = parseBibFields(entry);
-    const author = fields.author ?? fields.editor;
-    const title = fields.title;
-    const venue = fields.journal ?? fields.booktitle ?? fields.publisher ?? fields.school;
-    const volumeIssue = [
-      fields.volume,
-      fields.number ? `(${fields.number})` : undefined
-    ].filter(Boolean).join("");
-    const pages = fields.pages ? `pp. ${fields.pages}` : undefined;
-    const year = fields.year;
-    const doi = fields.doi ? `DOI: ${fields.doi}` : undefined;
-    const parts = [author, title, venue, volumeIssue, pages, year, doi].filter((part): part is string => Boolean(part));
-    return parts.length ? `[${bibkey}] ${parts.join(". ")}.` : `[${bibkey}] ${object.title}.`;
-  } catch {
-    return `[${bibkey}] ${object.title}.`;
-  }
+  const owner = object.citation.ownerProject ?? object.origin.ownerProject;
+  const entry = graph.bibRegistriesByOwner[owner]?.entriesByKey[bibkey];
+  if (!entry) return `[${bibkey}] ${object.title}.`;
+  const fields = entry.fields;
+  const author = fields.author ?? fields.editor;
+  const title = fields.title;
+  const venue = fields.journal ?? fields.booktitle ?? fields.publisher ?? fields.school;
+  const volumeIssue = [
+    fields.volume,
+    fields.number ? `(${fields.number})` : undefined
+  ].filter(Boolean).join("");
+  const pages = fields.pages ? `pp. ${fields.pages}` : undefined;
+  const year = fields.year;
+  const doi = fields.doi ? `DOI: ${fields.doi}` : undefined;
+  const parts = [author, title, venue, volumeIssue, pages, year, doi].filter((part): part is string => Boolean(part));
+  return parts.length ? `[${bibkey}] ${parts.join(". ")}.` : `[${bibkey}] ${object.title}.`;
 }
 
 function citationRole(node: ResolvedRouteNode): string {
@@ -272,7 +212,7 @@ function linkedCitationRole(object: NormalizedObject): string {
   return "background reference";
 }
 
-async function referenceContext(route: ResolvedRoute, linkedObjects: NormalizedObject[]): Promise<string[]> {
+async function referenceContext(graph: NormalizedGraph, route: ResolvedRoute, linkedObjects: NormalizedObject[]): Promise<string[]> {
   const entries = new Map<string, { line: string; roles: Set<string> }>();
   const lines: string[] = [];
   const addObject = async (object: NormalizedObject, role: string) => {
@@ -283,7 +223,7 @@ async function referenceContext(route: ResolvedRoute, linkedObjects: NormalizedO
       existing.roles.add(role);
       return;
     }
-    const line = await citationReferenceLine(object);
+    const line = citationReferenceLine(graph, object);
     if (line) entries.set(bibkey, { line, roles: new Set([role]) });
   };
 
@@ -500,7 +440,7 @@ export async function exportCloudMarkdown(graph: NormalizedGraph, route: Resolve
     }
   }
 
-  const references = await referenceContext(route, [...linkedReferenceObjects.values()]);
+  const references = await referenceContext(graph, route, [...linkedReferenceObjects.values()]);
   if (references.length) {
     out.push("", "## References", "", ...references);
   }
@@ -554,14 +494,52 @@ export async function exportRoute(graph: NormalizedGraph, route: ResolvedRoute, 
   return exportManifest(graph, route);
 }
 
-export async function createSnapshot(graph: NormalizedGraph, routeRecipe: RouteView, route: ResolvedRoute): Promise<RouteSnapshot> {
+async function gitOutput(cwd: string, args: string[]): Promise<string | null> {
+  try {
+    const result = await execFileAsync("git", args, { cwd });
+    return result.stdout.trim();
+  } catch {
+    return null;
+  }
+}
+
+async function repositoryState(project: string, role: SnapshotRepositoryState["role"], root: string): Promise<SnapshotRepositoryState> {
+  const commit = await gitOutput(root, ["rev-parse", "HEAD"]);
+  const status = await gitOutput(root, ["status", "--porcelain"]);
+  return {
+    project,
+    role,
+    git_commit: commit,
+    dirty: Boolean(status)
+  };
+}
+
+async function snapshotRepositories(graph: NormalizedGraph): Promise<SnapshotRepositoryState[]> {
+  const states = [
+    await repositoryState(graph.config.project, "active", graph.atlasRoot)
+  ];
+  for (const mount of graph.referenceMounts) {
+    if (mount.status !== "mounted" || !mount.root) continue;
+    states.push(await repositoryState(mount.id, "mounted_reference", mount.root));
+  }
+  return states;
+}
+
+export async function createSnapshot(graph: NormalizedGraph, routeRecipe: RouteView, route: ResolvedRoute, options: SnapshotOptions = {}): Promise<RouteSnapshot> {
   const markdown = await exportCloudMarkdown(graph, route);
+  const repositories = await snapshotRepositories(graph);
+  const dirtyRepositories = repositories.filter((repo) => repo.dirty || !repo.git_commit);
+  if (options.requireClean && dirtyRepositories.length) {
+    throw new Error(`Snapshot requires clean git repositories: ${dirtyRepositories.map((repo) => repo.project).join(", ")}.`);
+  }
   return {
     schema_version: "0.1",
     type: "snapshot",
     exported_at: new Date().toISOString(),
     project_uid: graph.config.project,
     graph_built_at: graph.builtAt,
+    reproducible: dirtyRepositories.length === 0,
+    repositories,
     route: routeRecipe,
     object_names: route.nodes.map((node) => node.object.name),
     markdown: markdown.content,

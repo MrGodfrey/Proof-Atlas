@@ -120,16 +120,16 @@ If GitHub Actions has Cloudflare secrets configured, pushing to GitHub can also 
 ```bash
 curl -fsSI https://proof-atlas-demo.pages.dev/
 curl -fsSL https://proof-atlas-demo.pages.dev/demo-data.json \
-  | node -e "let s='';const count=v=>Array.isArray(v)?v.length:Object.keys(v??{}).length;process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const d=JSON.parse(s),g=d.graph??{}; console.log(g.config?.title, count(g.objects), count(g.views), count(d.bodies));})"
+  | node -e "let s='';const count=v=>Array.isArray(v)?v.length:Object.keys(v??{}).length;process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const d=JSON.parse(s); console.log(d.schema_version, d.default_project); for (const p of d.projects??[]) console.log(p.id, p.title); for (const [id,p] of Object.entries(d.payloads??{})) console.log(id, count(p.graph?.objects), count(p.graph?.views), count(p.bodies));})"
 ```
 
 Expected result:
 
 - The home page returns HTTP 200.
 - `demo-data.json` parses.
-- Output includes `Semi-discrete stochastic controllability`.
-- Object count and view count are not 0.
-- Opening the page in a browser shows the `Cloudflare demo` chip and no obvious errors.
+- Output includes `semi-discrete-stochastic-control` and `proof-atlas-example-reference-atlas`.
+- Object count, view count, and body count are nonzero for both payloads.
+- The top `Open` menu lists both projects and can directly open `Proof Atlas Example Reference Atlas`.
 
 ## 7. Commit The Release
 

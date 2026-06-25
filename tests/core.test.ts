@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { appendBibEntryToUnverified } from "../src/core/bibtex";
 import { buildGraph, buildBodyFiles, findObject } from "../src/core/graph";
 import { parseMarkdownReferences, rewriteMarkdownObjectNames } from "../src/core/markdownRefs";
 import { hasCheckErrors } from "../src/core/problems";
@@ -390,33 +391,50 @@ describe("Proof Atlas core", () => {
     ], {
       atlas: {
         references: {
-          mounts: [{ id: "test-reference-atlas", mode: "readonly" }]
+          mounts: [{ id: "test-reference-atlas" }]
         }
       }
     });
-    await fs.writeFile(path.join(project, ".atlas", "local.yml"), [
-      "reference_atlases:",
-      "  test-reference-atlas:",
-      `    root: ${referenceAtlas}`,
+    const home = await tempDir("pa-reference-registry-home-");
+    const previousHome = process.env.PROOF_ATLAS_HOME;
+    process.env.PROOF_ATLAS_HOME = home;
+    await fs.mkdir(home, { recursive: true });
+    await fs.writeFile(path.join(home, "projects.yml"), [
+      "version: 1",
+      "recent:",
+      "  - id: test-reference-atlas",
+      "    title: Test Reference Atlas",
+      `    atlas_root: ${referenceAtlas}`,
+      `    workspace_root: ${path.dirname(referenceAtlas)}`,
+      "    last_opened: '2026-06-25T00:00:00+08:00'",
       ""
     ].join("\n"), "utf8");
 
-    const graph = await buildGraph(project);
-    const source = graph.objectsByName["source.paper"];
-    expect(source).toBeTruthy();
-    expect(source.origin.kind).toBe("global_reference");
-    expect(source.origin.atlasId).toBe("test-reference-atlas");
-    expect(source.origin.readonly).toBe(true);
-    expect(source.citation?.trust).toBe("trusted");
-    expect(graph.objectsByName["main.claim.a"].edges.cites?.map((ref) => ref.target)).toContain("source.paper");
-    expect(graph.objectsByName["source.paper"].reverseEdges.cited_by).toContain("main.claim.a");
-    expect(await buildBodyFiles(graph, source)).toHaveLength(1);
-    expect(graph.problems.map((item) => item.code)).not.toContain("local_source_namespace_forbidden");
-    expect(hasCheckErrors(graph.problems, true)).toBe(false);
+    try {
+      const graph = await buildGraph(project);
+      const source = graph.objectsByName["source.paper"];
+      expect(source).toBeTruthy();
+      expect(source.origin.kind).toBe("global_reference");
+      expect(source.origin.atlasId).toBe("test-reference-atlas");
+      expect(source.origin.readonly).toBe(true);
+      expect(source.origin.ownerProject).toBe("test-reference-atlas");
+      expect(source.citation?.trust).toBe("trusted");
+      expect(graph.objectsByName["main.claim.a"].edges.cites?.map((ref) => ref.target)).toContain("source.paper");
+      expect(graph.objectsByName["source.paper"].reverseEdges.cited_by).toContain("main.claim.a");
+      expect(await buildBodyFiles(graph, source)).toHaveLength(1);
+      expect(graph.problems.map((item) => item.code)).not.toContain("local_source_namespace_forbidden");
+      expect(hasCheckErrors(graph.problems, true)).toBe(false);
+    } finally {
+      if (previousHome === undefined) delete process.env.PROOF_ATLAS_HOME;
+      else process.env.PROOF_ATLAS_HOME = previousHome;
+    }
   });
 
   it("reports missing reference atlas mounts without cascading source target errors", async () => {
     const root = await tempDir("pa-missing-reference-mount-");
+    const home = await tempDir("pa-missing-reference-home-");
+    const previousHome = process.env.PROOF_ATLAS_HOME;
+    process.env.PROOF_ATLAS_HOME = home;
     const project = await writeTestProject(root, [
       {
         ...baseClaim("main.claim.a", "obj_20260618_miss01"),
@@ -434,17 +452,22 @@ describe("Proof Atlas core", () => {
     ], {
       atlas: {
         references: {
-          mounts: [{ id: "missing-reference-atlas", mode: "readonly" }]
+          mounts: [{ id: "missing-reference-atlas" }]
         }
       },
       views: { "paper.md": "# Paper\n\n![[main.claim.a]]\n\n![[source.paper]]\n" }
     });
-    const graph = await buildGraph(project);
-    const codes = graph.problems.map((item) => item.code);
-    expect(codes).toContain("missing_reference_atlas_mount");
-    expect(codes).not.toContain("missing_edge_target");
-    expect(codes).not.toContain("missing_markdown_link");
-    expect(codes).not.toContain("missing_embed");
+    try {
+      const graph = await buildGraph(project);
+      const codes = graph.problems.map((item) => item.code);
+      expect(codes).toContain("reference_atlas_mount_unresolved");
+      expect(codes).not.toContain("missing_edge_target");
+      expect(codes).not.toContain("missing_markdown_link");
+      expect(codes).not.toContain("missing_embed");
+    } finally {
+      if (previousHome === undefined) delete process.env.PROOF_ATLAS_HOME;
+      else process.env.PROOF_ATLAS_HOME = previousHome;
+    }
   });
 
   it("forbids local source namespace objects in ordinary projects", async () => {
@@ -468,5 +491,127 @@ describe("Proof Atlas core", () => {
     });
     const graph = await buildGraph(project);
     expect(graph.problems.map((item) => item.code)).toContain("local_source_namespace_forbidden");
+  });
+
+  it("resolves duplicate BibKeys by owner project instead of graph-wide key", async () => {
+    const root = await tempDir("pa-owner-bib-");
+    const referenceAtlas = await writeTestProject(path.join(root, "reference"), [
+      {
+        object: {
+          uid: "obj_20260625_refa",
+          name: "source.smith",
+          kind: "note",
+          role: "literature",
+          title: "Reference Smith",
+          body: ["note.md"],
+          provenance: "external",
+          citation: { bibkey: "Smith2020" }
+        },
+        bodies: { "note.md": "Reference Smith.\n" }
+      }
+    ], {
+      atlas: {
+        project: "owner-reference-atlas",
+        title: "Owner Reference Atlas",
+        atlas_type: "reference"
+      },
+      views: { "paper.md": "# References\n\n![[source.smith]]\n" }
+    });
+    await fs.writeFile(path.join(referenceAtlas, "references.bib"), "@Article{Smith2020, title={Reference Smith}, year={2020}}\n", "utf8");
+    await fs.writeFile(path.join(referenceAtlas, "bib-registry.yml"), [
+      'schema_version: "0.1"',
+      "trusted:",
+      "  - id: trusted",
+      "    path: references.bib",
+      ""
+    ].join("\n"), "utf8");
+
+    const project = await writeTestProject(root, [
+      {
+        object: {
+          uid: "obj_20260625_loca",
+          name: "paper.note.smith",
+          kind: "note",
+          role: "literature",
+          title: "Local Smith",
+          body: ["note.md"],
+          provenance: "external",
+          citation: { bibkey: "Smith2020" }
+        },
+        bodies: { "note.md": "Local Smith.\n" }
+      }
+    ], {
+      atlas: {
+        references: {
+          mounts: [{ id: "owner-reference-atlas" }]
+        }
+      },
+      views: { "paper.md": "# Paper\n\n![[paper.note.smith]]\n\n![[source.smith]]\n" }
+    });
+    await fs.writeFile(path.join(project, "references.bib"), "@Article{Smith2020, title={Local Smith}, year={2020}}\n", "utf8");
+    await fs.writeFile(path.join(project, "bib-registry.yml"), [
+      'schema_version: "0.1"',
+      "unverified:",
+      "  - id: local",
+      "    path: references.bib",
+      ""
+    ].join("\n"), "utf8");
+    const home = await tempDir("pa-owner-bib-home-");
+    const previousHome = process.env.PROOF_ATLAS_HOME;
+    process.env.PROOF_ATLAS_HOME = home;
+    await fs.writeFile(path.join(home, "projects.yml"), [
+      "version: 1",
+      "recent:",
+      "  - id: owner-reference-atlas",
+      "    title: Owner Reference Atlas",
+      `    atlas_root: ${referenceAtlas}`,
+      `    workspace_root: ${path.dirname(referenceAtlas)}`,
+      "    last_opened: '2026-06-25T00:00:00+08:00'",
+      ""
+    ].join("\n"), "utf8");
+
+    try {
+      const graph = await buildGraph(project);
+      expect(graph.objectsByName["paper.note.smith"].citation?.trust).toBe("unverified");
+      expect(graph.objectsByName["source.smith"].citation?.trust).toBe("trusted");
+      expect(graph.bibRegistriesByOwner["test-project"].entriesByKey.Smith2020.fields.title).toBe("Local Smith");
+      expect(graph.bibRegistriesByOwner["owner-reference-atlas"].entriesByKey.Smith2020.fields.title).toBe("Reference Smith");
+      expect(hasCheckErrors(graph.problems, false)).toBe(false);
+    } finally {
+      if (previousHome === undefined) delete process.env.PROOF_ATLAS_HOME;
+      else process.env.PROOF_ATLAS_HOME = previousHome;
+    }
+  });
+
+  it("appends a single new BibTeX entry to unverified and rejects DOI duplicates", async () => {
+    const root = await tempDir("pa-bib-add-");
+    const referenceAtlas = await writeTestProject(root, [baseClaim()], {
+      atlas: {
+        project: "bib-add-reference",
+        atlas_type: "reference"
+      }
+    });
+    await fs.writeFile(path.join(referenceAtlas, "references.bib"), "@Article{Existing2020, title={Existing}, year={2020}, doi={10.1000/demo}}\n", "utf8");
+    await fs.writeFile(path.join(referenceAtlas, "unverified.bib"), "", "utf8");
+    await fs.writeFile(path.join(referenceAtlas, "rejected.bib"), "", "utf8");
+    await fs.writeFile(path.join(referenceAtlas, "bib-registry.yml"), [
+      'schema_version: "0.1"',
+      "trusted:",
+      "  - id: trusted",
+      "    path: references.bib",
+      "unverified:",
+      "  - id: unverified",
+      "    path: unverified.bib",
+      "rejected:",
+      "  - id: rejected",
+      "    path: rejected.bib",
+      ""
+    ].join("\n"), "utf8");
+
+    const result = await appendBibEntryToUnverified(referenceAtlas, "bib-add-reference", "@Article{New2026, title={New Paper}, year={2026}, doi={10.1000/new}}\n");
+    expect(result.outputFile).toBe(path.join(referenceAtlas, "unverified.bib"));
+    expect(await fs.readFile(path.join(referenceAtlas, "unverified.bib"), "utf8")).toContain("@Article{New2026");
+    await expect(appendBibEntryToUnverified(referenceAtlas, "bib-add-reference", "@Article{Dup2026, title={Duplicate}, year={2026}, doi={https://doi.org/10.1000/demo}}\n"))
+      .rejects.toThrow("DOI 10.1000/demo already exists");
   });
 });

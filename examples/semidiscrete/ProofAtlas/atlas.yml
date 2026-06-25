@@ -1,11 +1,10 @@
-schema_version: "0.1"
+schema_version: "0.2"
 project: semi-discrete-stochastic-control
 title: Semi-discrete stochastic controllability
 default_view: views/dashboard.md
 math_renderer: katex
 references:
   mounts:
-    - id: shared-reference-atlas
-      mode: readonly
+    - id: proof-atlas-example-reference-atlas
 workspace:
   root: ..

@@ -120,16 +120,16 @@ npx wrangler pages deploy dist --project-name=proof-atlas-demo --branch=main
 ```bash
 curl -fsSI https://proof-atlas-demo.pages.dev/
 curl -fsSL https://proof-atlas-demo.pages.dev/demo-data.json \
-  | node -e "let s='';const count=v=>Array.isArray(v)?v.length:Object.keys(v??{}).length;process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const d=JSON.parse(s),g=d.graph??{}; console.log(g.config?.title, count(g.objects), count(g.views), count(d.bodies));})"
+  | node -e "let s='';const count=v=>Array.isArray(v)?v.length:Object.keys(v??{}).length;process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const d=JSON.parse(s); console.log(d.schema_version, d.default_project); for (const p of d.projects??[]) console.log(p.id, p.title); for (const [id,p] of Object.entries(d.payloads??{})) console.log(id, count(p.graph?.objects), count(p.graph?.views), count(p.bodies));})"
 ```
 
 期望结果：
 
 - 首页返回 HTTP 200
 - `demo-data.json` 能解析
-- 输出包含 `Semi-discrete stochastic controllability`
-- 对象数量和视图数量不是 0
-- 浏览器打开页面时能看到 `Cloudflare demo` 标记，没有明显报错
+- 输出包含 `semi-discrete-stochastic-control` 和 `proof-atlas-example-reference-atlas`
+- 两个 payload 的对象数量、视图数量和 body 数量都不是 0
+- 浏览器顶部 `Open` 菜单能列出两个项目，并且能直接打开 `Proof Atlas Example Reference Atlas`
 
 ## 7. 提交发布
 

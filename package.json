@@ -1,6 +1,6 @@
 {
   "name": "proof-atlas",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "A local, file-driven workbench for mathematical proof graphs.",
   "license": "MIT",
   "engines": {
@@ -32,7 +32,7 @@
     "atlas": "tsx src/cli/atlas.ts",
     "build": "tsc -p tsconfig.json && vite build",
     "build:demo": "npm run demo:data && tsc -p tsconfig.json && vite build --mode demo && npm run docs:build",
-    "demo:data": "tsx src/cli/atlas.ts demo-data examples/semidiscrete/ProofAtlas --output public/demo-data.json",
+    "demo:data": "PROOF_ATLAS_HOME=$(mktemp -d) tsx src/cli/atlas.ts demo-data examples/semidiscrete/ProofAtlas --include-mounted --output public/demo-data.json",
     "dev": "vite --host 127.0.0.1",
     "dev:demo": "npm run demo:data && vite --host 127.0.0.1 --mode demo",
     "docs:build": "vitepress build wiki",

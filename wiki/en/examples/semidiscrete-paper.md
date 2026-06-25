@@ -12,7 +12,7 @@ The shared reference library it mounts is:
 examples/reference-atlas/ProofAtlas
 ```
 
-This example decomposes a semi-discrete stochastic parabolic equation paper into an object graph: paper overview, introduction, continuous model, discrete mesh, main theorem, preliminary propositions, proofs, main proof iteration, adaptedness audit, and literature references. Literature notes and external results live in `shared-reference-atlas`; the paper project mounts them read-only through `references.mounts`.
+This example decomposes a semi-discrete stochastic parabolic equation paper into an object graph: paper overview, introduction, continuous model, discrete mesh, main theorem, preliminary propositions, proofs, main proof iteration, adaptedness audit, and literature references. Literature notes and external results live in `proof-atlas-example-reference-atlas`; the paper project mounts them read-only through `references.mounts`. In the Cloudflare demo, the top `Open` menu lists both the paper project and the Reference Atlas, so it can switch projects the same way as the local app.
 
 ## Recommended Reading Order
 
@@ -96,4 +96,4 @@ main.model.continuous_problem cites source.lue_2011
 main.note.introduction cites all introduction references
 ```
 
-The web UI renders literature links in a bracketed style. `source.*` objects come from `examples/reference-atlas/ProofAtlas`, so the right column shows `origin: global_reference`, `origin_atlas: shared-reference-atlas`, bibkey, and trust. Ordinary paper projects no longer maintain these `source.*` objects locally.
+The web UI renders literature links in a bracketed style. `source.*` objects come from `examples/reference-atlas/ProofAtlas`, so the right column shows `origin: global_reference`, `origin_atlas: proof-atlas-example-reference-atlas`, bibkey, and trust. Ordinary paper projects no longer maintain these `source.*` objects locally.
